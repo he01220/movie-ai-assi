@@ -1,0 +1,229 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Cinematic Movie App Design System - All colors MUST be HSL */
+
+@layer base {
+  :root {
+    /* Core cinematic palette */
+    --background: 0 0% 3%;
+    --foreground: 0 0% 95%;
+    
+    /* Cinema-inspired surfaces */
+    --card: 0 0% 6%;
+    --card-foreground: 0 0% 95%;
+    
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 95%;
+    
+    /* Cinematic red theme */
+    --primary: 0 72% 51%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Dark surfaces */
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 95%;
+    
+    --muted: 0 0% 8%;
+    --muted-foreground: 0 0% 60%;
+    
+    /* Gold accents for ratings */
+    --accent: 45 93% 58%;
+    --accent-foreground: 0 0% 5%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 0 0% 15%;
+    --input: 0 0% 12%;
+    --ring: 0 72% 51%;
+    
+    /* Custom cinematic variables */
+    --cinema-red: 0 72% 51%;
+    --cinema-gold: 45 93% 58%;
+    --cinema-dark: 0 0% 6%;
+    --cinema-darker: 0 0% 3%;
+    --cinema-gray: 0 0% 60%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(0 72% 51%), hsl(15 72% 45%));
+    --gradient-dark: linear-gradient(180deg, hsl(0 0% 3%), hsl(0 0% 6%));
+    --gradient-card: linear-gradient(135deg, hsl(0 0% 6%), hsl(0 0% 8%));
+    --gradient-gold: linear-gradient(135deg, hsl(45 93% 58%), hsl(40 85% 50%));
+    
+    /* Shadows */
+    --shadow-cinema: 0 10px 30px -10px hsl(0 0% 0% / 0.8);
+    --shadow-glow: 0 0 40px hsl(0 72% 51% / 0.3);
+    --shadow-card: 0 4px 20px hsl(0 0% 0% / 0.5);
+    
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    background: var(--gradient-dark);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  }
+  /* Keyboard and TV focus visibility */
+  :focus-visible {
+    outline: 3px solid hsl(var(--primary));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* TV-Like Large Screens */
+  @media (min-width: 1600px) {
+    html { font-size: 18px; }
+    body { line-height: 1.6; }
+    .tv-touch-target { min-height: 3rem; min-width: 3rem; }
+    .tv-card-title { font-size: 1.125rem; }
+  }
+  /* Light theme overrides applied when ThemeProvider sets `class="light"` on html */
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 0 72% 51%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 45 93% 58%;
+    --accent-foreground: 222.2 84% 4.9%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 0 72% 51%;
+
+    --cinema-red: 0 72% 51%;
+    --cinema-gold: 45 93% 58%;
+    --cinema-dark: 0 0% 98%;
+    --cinema-darker: 0 0% 99%;
+    --cinema-gray: 215.4 16.3% 46.9%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(0 72% 51%), hsl(15 72% 45%));
+    --gradient-dark: linear-gradient(180deg, hsl(0 0% 98%), hsl(0 0% 100%));
+    --gradient-card: linear-gradient(135deg, hsl(0 0% 100%), hsl(0 0% 98%));
+    --gradient-gold: linear-gradient(135deg, hsl(45 93% 58%), hsl(40 85% 50%));
+  }
+
+  .light body {
+    background: var(--gradient-dark);
+  }
+}
+
+@layer components {
+  /* Video Feed Styles */
+  .video-container {
+    @apply relative w-full h-screen snap-start;
+  }
+  
+  .video-overlay {
+    @apply absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent;
+  }
+  
+  /* Movie Card Styles */
+  .movie-card {
+    @apply relative overflow-hidden rounded-lg bg-card shadow-[var(--shadow-card)] transition-all duration-300;
+    background: var(--gradient-card);
+  }
+  
+  .movie-card:hover {
+    @apply scale-105 shadow-[var(--shadow-glow)];
+  }
+  
+  /* Cinematic Button Variants */
+  .btn-cinema {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 shadow-[var(--shadow-cinema)];
+    background: var(--gradient-primary);
+    transition: var(--transition-smooth);
+  }
+  
+  .btn-cinema:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-glow);
+  }
+  
+  .btn-gold {
+    @apply text-black font-semibold;
+    background: var(--gradient-gold);
+    transition: var(--transition-bounce);
+  }
+  
+  /* Navigation Styles */
+  .nav-bottom {
+    @apply fixed bottom-0 left-0 right-0 bg-card/80 backdrop-blur-xl border-t border-border z-50;
+    background: linear-gradient(180deg, hsl(0 0% 6% / 0.9), hsl(0 0% 3% / 0.95));
+  }
+  
+  /* Upload Area */
+  .upload-area {
+    @apply border-2 border-dashed border-border rounded-lg p-8 text-center transition-all duration-300;
+    background: var(--gradient-card);
+  }
+  
+  .upload-area:hover {
+    @apply border-primary/50 bg-primary/5;
+  }
+  
+  /* Rating Badge */
+  .rating-badge {
+    @apply inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium text-black;
+    background: var(--gradient-gold);
+  }
+  
+  /* Offline Indicator */
+  .offline-indicator {
+    @apply fixed top-4 right-4 px-3 py-1 rounded-full text-xs font-medium z-50;
+  }
+  
+  .offline-indicator.online {
+    @apply bg-green-500/20 text-green-400 border border-green-500/30;
+  }
+  
+  .offline-indicator.offline {
+    @apply bg-red-500/20 text-red-400 border border-red-500/30;
+  }
+}

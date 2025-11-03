@@ -1,0 +1,4 @@
+project_id = "dscgnebsdpxhdzcqwrgd"
+
+[functions.groq-assistant]
+verify_jwt = false
