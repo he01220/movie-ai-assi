@@ -9,6 +9,36 @@ export type HistoryEvent = {
   query?: string;
 };
 
+// Push local events created when user was offline/not signed-in to Supabase.
+// Strategy: find the latest server timestamp for this user, then insert local events newer than that ts.
+export const syncLocalHistoryToSupabase = async () => {
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+  try {
+    const { data: latest, error: latestErr } = await (supabase as any)
+      .from(TABLE)
+      .select('ts')
+      .eq('user_id', userId)
+      .order('ts', { ascending: false })
+      .limit(1);
+    if (latestErr) return;
+    const latestTs = latest && latest.length > 0 ? Date.parse(latest[0].ts as string) : 0;
+    const { events } = readHistory();
+    const pending = events.filter(e => e.ts > latestTs);
+    if (pending.length === 0) return;
+    const rows = pending.map(e => ({
+      user_id: userId,
+      type: e.type,
+      ts: new Date(e.ts).toISOString(),
+      movie_id: e.movieId ?? null,
+      title: e.title ?? null,
+      genres: e.genres ?? null,
+      query: e.query ?? null,
+    }));
+    await (supabase as any).from(TABLE).insert(rows);
+  } catch {}
+};
+
 export type HistoryState = {
   events: HistoryEvent[];
   // quick aggregates

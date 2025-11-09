@@ -16,7 +16,7 @@ import AuthModal from "./components/AuthModal";
 import AIAssistant from "./components/AIAssistant";
 import { useAuth } from "./hooks/useAuth";
 import { useState, useEffect } from "react";
-import { hydrateHistoryFromSupabase } from "@/utils/history";
+import { hydrateHistoryFromSupabase, syncLocalHistoryToSupabase } from "@/utils/history";
 import { enableTVFocus } from "@/utils/tvFocus";
 
 const queryClient = new QueryClient();
@@ -56,7 +56,11 @@ const AppContent = () => {
     let cancelled = false;
     const run = async () => {
       if (!loading && user?.id) {
-        try { await hydrateHistoryFromSupabase(); } catch {}
+        try {
+          // First push any local-only events to server, then hydrate back
+          await syncLocalHistoryToSupabase();
+          await hydrateHistoryFromSupabase();
+        } catch {}
         if (!cancelled) {
           // no-op; local cache is hydrated for all pages
         }
