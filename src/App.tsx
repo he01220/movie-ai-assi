@@ -55,6 +55,19 @@ const AppContent = () => {
     }
   }, [user, loading]);
 
+  // If we were just signed out due to unregistered account, show a toast once
+  useEffect(() => {
+    if (!loading && !user) {
+      try {
+        const flag = localStorage.getItem('account_not_registered');
+        if (flag === '1') {
+          toast({ title: 'Account not registered', description: 'Please register first, then sign in.', variant: 'destructive' });
+          localStorage.removeItem('account_not_registered');
+        }
+      } catch {}
+    }
+  }, [user, loading]);
+
   // Removed global 'account not registered' guard; handled in Auth Sign In flow
 
   // Globally hydrate history once the user is signed in
