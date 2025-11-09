@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Film, Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 const Auth = () => {
@@ -48,10 +49,24 @@ const Auth = () => {
         variant: 'destructive',
       });
     } else {
-      toast({
-        title: 'Welcome back!',
-        description: 'Successfully signed in',
-      });
+      // Check that a profiles row exists for this authenticated user
+      try {
+        const { data: u } = await supabase.auth.getUser();
+        const uid = u.user?.id;
+        if (uid) {
+          const { data } = await (supabase as any)
+            .from('profiles')
+            .select('id')
+            .eq('id', uid)
+            .maybeSingle();
+          if (!data) {
+            await (async () => { try { await supabase.auth.signOut(); } catch {} })();
+            toast({ title: 'Account not registered', description: 'Please register first, then sign in.', variant: 'destructive' });
+            return;
+          }
+        }
+      } catch {}
+      toast({ title: 'Welcome back!', description: 'Successfully signed in' });
     }
     setLoading(false);
   };

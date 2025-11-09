@@ -55,26 +55,7 @@ const AppContent = () => {
     }
   }, [user, loading]);
 
-  // Guard: if user exists but there is no profile row, treat as not registered
-  useEffect(() => {
-    const checkProfile = async () => {
-      if (loading) return;
-      if (!user?.id) return;
-      try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', user.id)
-          .maybeSingle();
-        if (error) return;
-        if (!data) {
-          toast({ title: 'Account not registered', description: 'Please register first, then sign in.', variant: 'destructive' });
-          await signOut();
-        }
-      } catch {}
-    };
-    void checkProfile();
-  }, [user?.id, loading]);
+  // Removed global 'account not registered' guard; handled in Auth Sign In flow
 
   // Globally hydrate history once the user is signed in
   useEffect(() => {
