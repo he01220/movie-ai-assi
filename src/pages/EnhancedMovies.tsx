@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import VideoPlayerModal from "@/components/VideoPlayerModal";
-import { logQuery, logExternalSearch, logTrailerPlay, logMovieOpen, readHistory, getTopGenresFromHistory } from "@/utils/history";
+import { logQuery, logExternalSearch, logTrailerPlay, logMovieOpen, readHistory, getTopGenresFromHistory, hydrateHistoryFromSupabase } from "@/utils/history";
 import { rankCandidates } from "@/utils/reco";
 
 interface TMDBMovie {
@@ -86,6 +86,7 @@ const EnhancedMovies = () => {
     if (user) {
       fetchUserPreferences();
     }
+    (async () => { try { if (user?.id) await hydrateHistoryFromSupabase(); } catch {}; })();
     // fetch personalized recommendations (top genres)
     (async () => {
       const top = getTopGenresFromHistory();

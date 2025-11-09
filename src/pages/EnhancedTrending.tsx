@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import VideoPlayerModal from "@/components/VideoPlayerModal";
-import { readHistory, logTrailerPlay, logExternalSearch, logMovieOpen, getTopGenresFromHistory } from "@/utils/history";
+import { readHistory, logTrailerPlay, logExternalSearch, logMovieOpen, getTopGenresFromHistory, hydrateHistoryFromSupabase } from "@/utils/history";
 import { rankCandidates } from "@/utils/reco";
 
 interface TMDBMovie {
@@ -63,6 +63,7 @@ const EnhancedTrending = () => {
     if (user) {
       fetchUserPreferences();
     }
+    (async () => { try { if (user?.id) await hydrateHistoryFromSupabase(); } catch {}; })();
     // personalized reco by history top genres
     (async () => {
       const top = getTopGenresFromHistory();

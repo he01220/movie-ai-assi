@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { readHistory, type HistoryEvent, deleteEventAt, deleteEventsWhere } from "@/utils/history";
+import { useMemo, useState, useEffect } from "react";
+import { readHistory, type HistoryEvent, deleteEventAt, deleteEventsWhere, hydrateHistoryFromSupabase } from "@/utils/history";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Calendar, Search as SearchIcon, Play, Globe, Film, Trash2, Filter } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import VideoPlayerModal from "@/components/VideoPlayerModal";
 
 const formatTime = (ts: number) => {
@@ -37,6 +38,7 @@ const ALL_TYPES: TType[] = ["movie_open", "trailer_play", "query", "external_sea
 
 const Activity = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [tick, setTick] = useState(0);
   const [query, setQuery] = useState("");
   const [activeTypes, setActiveTypes] = useState<Record<TType, boolean>>({
@@ -65,6 +67,17 @@ const Activity = () => {
       return hay.includes(q);
     });
   }, [rawEvents, query, activeTypes]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!user?.id) return;
+      await hydrateHistoryFromSupabase();
+      if (!cancelled) setTick(x => x + 1);
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   const toggleType = (t: TType) => setActiveTypes(s => ({ ...s, [t]: !s[t] }));
 

@@ -1,3 +1,5 @@
+import { supabase } from '@/integrations/supabase/client';
+
 export type HistoryEvent = {
   type: 'movie_open' | 'trailer_play' | 'external_search' | 'query';
   ts: number;
@@ -16,6 +18,7 @@ export type HistoryState = {
 };
 
 const KEY = 'cinepulse_history_v1';
+const TABLE = 'user_activity';
 
 const safeParse = <T,>(raw: string | null, fallback: T): T => {
   if (!raw) return fallback;
@@ -51,6 +54,31 @@ const clampEvents = (events: HistoryEvent[], max = 500) => {
   return events.slice(events.length - max);
 };
 
+const getCurrentUserId = async (): Promise<string | null> => {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return data.user?.id || null;
+  } catch {
+    return null;
+  }
+};
+
+const persistToSupabase = async (evt: HistoryEvent) => {
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+  try {
+    await (supabase as any).from(TABLE).insert({
+      user_id: userId,
+      type: evt.type,
+      ts: new Date(evt.ts).toISOString(),
+      movie_id: evt.movieId ?? null,
+      title: evt.title ?? null,
+      genres: evt.genres ?? null,
+      query: evt.query ?? null,
+    });
+  } catch {}
+};
+
 const upsert = (evt: HistoryEvent) => {
   const s = readHistory();
   const events = clampEvents([...s.events, evt]);
@@ -65,6 +93,8 @@ const upsert = (evt: HistoryEvent) => {
   }
   const externalSearchCount = s.externalSearchCount + (evt.type === 'external_search' ? 1 : 0);
   writeHistory({ events, seenMovieIds, queryCounts, externalSearchCount });
+  // Fire-and-forget remote persist for signed-in users
+  try { void persistToSupabase(evt); } catch {}
 };
 
 export const logMovieOpen = (movieId: number, title?: string, genres?: number[]) => {
@@ -84,8 +114,14 @@ export const logQuery = (query: string) => {
   upsert({ type: 'query', ts: Date.now(), query: query.trim() });
 };
 
-export const clearAllHistory = () => {
+export const clearAllHistory = async () => {
   try { localStorage.removeItem(KEY); } catch {}
+  try {
+    const userId = await getCurrentUserId();
+    if (userId) {
+      await (supabase as any).from(TABLE).delete().eq('user_id', userId);
+    }
+  } catch {}
   try { window.dispatchEvent(new Event('cinepulse_history_changed')); } catch {}
 };
 
@@ -144,4 +180,40 @@ export const getTopGenresFromHistory = (fallback: number[] = []) => {
   }
   const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([g]) => Number(g));
   return sorted.length ? sorted : fallback;
+};
+
+// Fetch full activity from Supabase for the current user and hydrate local cache
+export const hydrateHistoryFromSupabase = async () => {
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+  try {
+    const { data, error } = await (supabase as any)
+      .from(TABLE)
+      .select('type, ts, movie_id, title, genres, query')
+      .eq('user_id', userId)
+      .order('ts', { ascending: true });
+    if (error || !data) return;
+    const events: HistoryEvent[] = data.map((r: any) => ({
+      type: r.type,
+      ts: typeof r.ts === 'string' ? Date.parse(r.ts) : Number(r.ts) || Date.now(),
+      movieId: r.movie_id ?? undefined,
+      title: r.title ?? undefined,
+      genres: r.genres ?? undefined,
+      query: r.query ?? undefined,
+    }));
+    // Recompute aggregates and write
+    const seenMovieIds: Record<string, number> = {};
+    const queryCounts: Record<string, number> = {};
+    let externalSearchCount = 0;
+    for (const e of events) {
+      if (e.movieId != null) seenMovieIds[String(e.movieId)] = e.ts;
+      if (e.type === 'query' && e.query) {
+        const k = e.query.trim().toLowerCase();
+        queryCounts[k] = (queryCounts[k] || 0) + 1;
+      }
+      if (e.type === 'external_search') externalSearchCount += 1;
+    }
+    writeHistory({ events, seenMovieIds, queryCounts, externalSearchCount });
+    try { window.dispatchEvent(new Event('cinepulse_history_changed')); } catch {}
+  } catch {}
 };
