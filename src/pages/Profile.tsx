@@ -38,6 +38,9 @@ const Profile = () => {
   const [watchlistMovies, setWatchlistMovies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [watchlistLoading, setWatchlistLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState("");
+  const [editBio, setEditBio] = useState("");
 
   useEffect(() => {
     if (!user) {
@@ -70,6 +73,37 @@ const Profile = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startEditing = () => {
+    if (!profile) return;
+    setEditDisplayName(profile.display_name || profile.username || "");
+    setEditBio(profile.bio || "");
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+  };
+
+  const saveProfileEdits = async () => {
+    if (!user) return;
+    try {
+      const updates: Partial<UserProfile> = {
+        display_name: editDisplayName || null,
+        bio: editBio || null,
+      };
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id);
+      if (error) throw error;
+      setProfile((prev) => prev ? { ...prev, ...updates, updated_at: new Date().toISOString() } as UserProfile : prev);
+      setEditing(false);
+      toast({ title: 'Profile updated' });
+    } catch (e) {
+      toast({ title: 'Failed to update profile', variant: 'destructive' });
     }
   };
 
@@ -184,12 +218,36 @@ const Profile = () => {
             
             <div className="flex-1 w-full">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-2 text-center sm:text-left">
-                <h1 className="text-2xl sm:text-3xl font-bold font-poppins break-all">@{displayName}</h1>
+                {editing ? (
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                    <input
+                      className="border rounded px-3 py-2 w-full"
+                      placeholder="Display name"
+                      value={editDisplayName}
+                      onChange={(e) => setEditDisplayName(e.target.value)}
+                    />
+                    <input
+                      className="border rounded px-3 py-2 w-full"
+                      placeholder="Bio"
+                      value={editBio}
+                      onChange={(e) => setEditBio(e.target.value)}
+                    />
+                  </div>
+                ) : (
+                  <h1 className="text-2xl sm:text-3xl font-bold font-poppins break-all">@{displayName}</h1>
+                )}
                 <div className="flex items-center justify-center sm:justify-start gap-2">
-                  <Button variant="outline" size="sm" className="self-center sm:self-auto">
-                    <Edit size={16} className="mr-2" />
-                    Edit Profile
-                  </Button>
+                  {editing ? (
+                    <>
+                      <Button variant="default" size="sm" onClick={saveProfileEdits} className="self-center sm:self-auto">Save</Button>
+                      <Button variant="outline" size="sm" onClick={cancelEditing} className="self-center sm:self-auto">Cancel</Button>
+                    </>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={startEditing} className="self-center sm:self-auto">
+                      <Edit size={16} className="mr-2" />
+                      Edit Profile
+                    </Button>
+                  )}
                   <Button variant="destructive" size="sm" onClick={handleLogout} className="self-center sm:self-auto">
                     <LogOut size={16} className="mr-2" />
                     Logout
@@ -197,7 +255,9 @@ const Profile = () => {
                 </div>
               </div>
               
-              <p className="text-muted-foreground mb-4 text-center sm:text-left">{profile.bio || "No bio yet"}</p>
+              {!editing && (
+                <p className="text-muted-foreground mb-4 text-center sm:text-left">{profile.bio || "No bio yet"}</p>
+              )}
               
               <div className="flex items-center justify-center sm:justify-start gap-6 text-sm">
                 <div>
