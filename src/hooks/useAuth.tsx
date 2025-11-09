@@ -21,11 +21,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         console.log('Auth state changed:', event, session?.user?.email);
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+        // If user signed in via OAuth (e.g., Google) and no profiles row exists, sign them out
+        if (event === 'SIGNED_IN' && session?.user?.id) {
+          try {
+            const uid = session.user.id;
+            const { data } = await (supabase as any)
+              .from('profiles')
+              .select('id')
+              .eq('id', uid)
+              .maybeSingle();
+            if (!data) {
+              try { localStorage.setItem('account_not_registered', '1'); } catch {}
+              await supabase.auth.signOut();
+            }
+          } catch {}
+        }
       }
     );
 
