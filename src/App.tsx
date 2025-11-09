@@ -12,6 +12,7 @@ import MovieDetails from "./pages/MovieDetails";
 import NotFound from "./pages/NotFound";
 import Settings from "./pages/Settings";
 import Activity from "./pages/Activity";
+import Auth from "./pages/Auth";
 import AuthModal from "./components/AuthModal";
 import AIAssistant from "./components/AIAssistant";
 import { useAuth } from "./hooks/useAuth";
@@ -93,6 +94,7 @@ const AppContent = () => {
           <Route path="/trending" element={<EnhancedTrending />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/auth" element={<Auth />} />
           <Route path="/profile" element={
             <ProtectedRoute>
               <Profile />
