@@ -16,6 +16,8 @@ import Auth from "./pages/Auth";
 import AuthModal from "./components/AuthModal";
 import AIAssistant from "./components/AIAssistant";
 import { useAuth } from "./hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { useState, useEffect } from "react";
 import { hydrateHistoryFromSupabase, syncLocalHistoryToSupabase } from "@/utils/history";
 import { enableTVFocus } from "@/utils/tvFocus";
@@ -41,8 +43,9 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const AppContent = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -51,6 +54,27 @@ const AppContent = () => {
       setShowAuthModal(false);
     }
   }, [user, loading]);
+
+  // Guard: if user exists but there is no profile row, treat as not registered
+  useEffect(() => {
+    const checkProfile = async () => {
+      if (loading) return;
+      if (!user?.id) return;
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (error) return;
+        if (!data) {
+          toast({ title: 'Account not registered', description: 'Please register first, then sign in.', variant: 'destructive' });
+          await signOut();
+        }
+      } catch {}
+    };
+    void checkProfile();
+  }, [user?.id, loading]);
 
   // Globally hydrate history once the user is signed in
   useEffect(() => {
