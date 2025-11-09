@@ -16,6 +16,7 @@ import AuthModal from "./components/AuthModal";
 import AIAssistant from "./components/AIAssistant";
 import { useAuth } from "./hooks/useAuth";
 import { useState, useEffect } from "react";
+import { hydrateHistoryFromSupabase } from "@/utils/history";
 import { enableTVFocus } from "@/utils/tvFocus";
 
 const queryClient = new QueryClient();
@@ -49,6 +50,21 @@ const AppContent = () => {
       setShowAuthModal(false);
     }
   }, [user, loading]);
+
+  // Globally hydrate history once the user is signed in
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!loading && user?.id) {
+        try { await hydrateHistoryFromSupabase(); } catch {}
+        if (!cancelled) {
+          // no-op; local cache is hydrated for all pages
+        }
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [user?.id, loading]);
 
   useEffect(() => {
     const disable = enableTVFocus();
