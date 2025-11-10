@@ -86,8 +86,8 @@ const EnhancedMovies = () => {
   const [videoKey, setVideoKey] = useState<string | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
-  // Content category selector (TV only by default)
-  const [contentType, setContentType] = useState<'movie' | 'tv'>('tv');
+  // Content category selector
+  const [contentType, setContentType] = useState<'movie' | 'tv'>('movie');
   // Ratings: per-user and aggregated per content
   const [userRatings, setUserRatings] = useState<Record<number, number>>({});
   const [avgRatings, setAvgRatings] = useState<Record<number, { avg: number; count: number }>>({});
@@ -660,12 +660,22 @@ const EnhancedMovies = () => {
               }}
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
-                {/* Category label (TV only) */}
+                {/* Category toggle (Movies / TV Series) */}
                 <Button
-                  variant="secondary"
+                  variant={contentType === 'movie' ? 'default' : 'outline'}
                   size="sm"
-                  disabled
-                  className="snap-start cursor-default opacity-90"
+                  onClick={() => { if (contentType !== 'movie') { setContentType('movie'); setCurrentPage(1); setSelectedGenre(null); } }}
+                  className="snap-start"
+                  aria-pressed={contentType === 'movie'}
+                >
+                  Movies
+                </Button>
+                <Button
+                  variant={contentType === 'tv' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => { if (contentType !== 'tv') { setContentType('tv'); setCurrentPage(1); setSelectedGenre(null); } }}
+                  className="snap-start"
+                  aria-pressed={contentType === 'tv'}
                 >
                   TV Series
                 </Button>
