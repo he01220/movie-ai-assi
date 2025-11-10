@@ -149,7 +149,6 @@ const EnhancedMovies = () => {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      if (!contentType) return;
       if (searchQuery) {
         searchMovies();
       } else {
@@ -310,14 +309,32 @@ const EnhancedMovies = () => {
   };
 
   const fetchPopularMovies = async (genreOverride: number | null = selectedGenre, pageOverride: number = currentPage) => {
-    if (!contentType) return;
     setLoading(true);
     setError(null);
     setLastAction("popular");
+    if (!contentType) {
+      // Mixed mode: fetch both popular
+      const epMovie = `movie/popular?page=${pageOverride}`;
+      const epTV = `tv/popular?page=${pageOverride}`;
+      const [movieData, tvData] = await Promise.all([
+        fetchFromTMDB(epMovie),
+        fetchFromTMDB(epTV)
+      ]);
+      let combined: TMDBMovie[] = [];
+      if (movieData?.results) combined = combined.concat(movieData.results as TMDBMovie[]);
+      if (tvData?.results) {
+        const normalized = (tvData.results as any[]).map(it => ({ ...it, title: it.title || it.name }));
+        combined = combined.concat(normalized as TMDBMovie[]);
+      }
+      const ranked = rankCandidates(combined, readHistory());
+      setMovies(ranked as TMDBMovie[]);
+      setTotalPages(Math.min(Math.max(movieData?.total_pages || 1, tvData?.total_pages || 1), 500));
+      setLoading(false);
+      return;
+    }
     const endpoint = genreOverride != null 
       ? `discover/${contentType}?with_genres=${genreOverride}&page=${pageOverride}&sort_by=popularity.desc`
       : `${contentType}/popular?page=${pageOverride}`;
-    // Prefill from cache for instant UI if available
     const cachedPrefill = readCached(endpoint) || (genreOverride != null ? readCached(`${contentType}/popular?page=${pageOverride}`) : null);
     if (cachedPrefill && movies.length === 0) {
       const results = (cachedPrefill.results || []) as TMDBMovie[];
@@ -325,32 +342,25 @@ const EnhancedMovies = () => {
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(cachedPrefill.total_pages || 1, 500));
     }
-    // Try live first
     let data = await fetchFromTMDB(endpoint);
-    // Fallback to popular if discover by genre failed
     if (!data && selectedGenre) {
       data = await fetchFromTMDB(`${contentType}/popular?page=${currentPage}`);
     }
-    // Fallback to cache if still failing
     if (!data) {
       const cached =
         readCached(endpoint) ||
         (selectedGenre ? readCached(`${contentType}/popular?page=${currentPage}`) : null);
       if (cached) data = cached;
     }
-    
     if (data) {
       const results = (data.results || []) as TMDBMovie[];
       const ranked = rankCandidates(results, readHistory());
       setMovies(ranked as TMDBMovie[]);
-      setTotalPages(Math.min(data.total_pages || 1, 500)); // Limit to 500 pages
+      setTotalPages(Math.min(data.total_pages || 1, 500));
       if (contentType === 'tv') { try { await fetchRatingsFor((ranked as TMDBMovie[]).map(m => m.id)); } catch {} }
-    } else {
-      // Only show error if we have nothing to show
-      if (movies.length === 0) {
-        setError('Unable to load movies. Please try again.');
-        setMovies([]);
-      }
+    } else if (movies.length === 0) {
+      setError('Unable to load movies. Please try again.');
+      setMovies([]);
     }
     setLoading(false);
   };
@@ -360,12 +370,31 @@ const EnhancedMovies = () => {
     genreOverride: number | null = selectedGenre,
     pageOverride: number = currentPage
   ) => {
-    if (!contentType) return;
     if (!queryOverride.trim()) return;
     
     setLoading(true);
     setError(null);
     setLastAction("search");
+    if (!contentType) {
+      // Mixed search: both movie and tv
+      const epMovie = `search/movie?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
+      const epTV = `search/tv?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
+      const [movieData, tvData] = await Promise.all([
+        fetchFromTMDB(epMovie),
+        fetchFromTMDB(epTV)
+      ]);
+      let results: TMDBMovie[] = [];
+      if (movieData?.results) results = results.concat(movieData.results as TMDBMovie[]);
+      if (tvData?.results) {
+        const normalized = (tvData.results as any[]).map(it => ({ ...it, title: it.title || it.name }));
+        results = results.concat(normalized as TMDBMovie[]);
+      }
+      const ranked = rankCandidates(results, readHistory());
+      setMovies(ranked as TMDBMovie[]);
+      setTotalPages(Math.min(Math.max(movieData?.total_pages || 1, tvData?.total_pages || 1), 500));
+      setLoading(false);
+      return;
+    }
     const endpoint = `search/${contentType}?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
     // Prefill from cache for instant UI
     const cachedPrefill = readCached(endpoint);
@@ -698,28 +727,34 @@ const EnhancedMovies = () => {
                 >
                   All Genres
                 </Button>
-                {Object.entries(contentType === 'tv' ? TV_GENRES : MOVIE_GENRES).map(([id, name]) => (
-                  <Button
-                    key={id}
-                    variant={selectedGenre === parseInt(id) ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      const genreId = parseInt(id);
-                      const page = 1;
-                      setSelectedGenre(genreId);
-                      setCurrentPage(page);
-                      if (searchQuery.trim()) {
-                        searchMovies(searchQuery, genreId, page);
-                      } else {
-                        fetchPopularMovies(genreId, page);
-                      }
-                    }}
-                    className="snap-start"
-                    aria-pressed={selectedGenre === parseInt(id)}
-                  >
-                    {name}
-                  </Button>
-                ))}
+                {contentType ? (
+                  Object.entries(contentType === 'tv' ? TV_GENRES : MOVIE_GENRES).map(([id, name]) => (
+                    <Button
+                      key={id}
+                      variant={selectedGenre === parseInt(id) ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => {
+                        const genreId = parseInt(id);
+                        const page = 1;
+                        setSelectedGenre(genreId);
+                        setCurrentPage(page);
+                        if (searchQuery.trim()) {
+                          searchMovies(searchQuery, genreId, page);
+                        } else {
+                          fetchPopularMovies(genreId, page);
+                        }
+                      }}
+                      className="snap-start"
+                      aria-pressed={selectedGenre === parseInt(id)}
+                    >
+                      {name}
+                    </Button>
+                  ))
+                ) : (
+                  <span className="px-3 py-1 text-xs rounded border text-muted-foreground border-muted-foreground/40 self-center select-none">
+                    Pick a category to filter by genres
+                  </span>
+                )}
             </div>
           </div>
         </div>
