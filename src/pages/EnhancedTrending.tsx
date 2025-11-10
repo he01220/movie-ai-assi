@@ -53,6 +53,8 @@ const EnhancedTrending = () => {
   const [videoKey, setVideoKey] = useState<string | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [recoMovies, setRecoMovies] = useState<TMDBMovie[]>([]);
+  const [recoPage, setRecoPage] = useState(1);
+  const [recoCount, setRecoCount] = useState<number>(8);
   
   const { user } = useAuth();
   const { toast } = useToast();
@@ -67,19 +69,40 @@ const EnhancedTrending = () => {
     // personalized reco by history top genres
     (async () => {
       const top = getTopGenresFromHistory();
+      const totalEvents = (readHistory().events || []).length;
+      const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
+      if (desired !== recoCount) setRecoCount(desired);
       const genreParam = top.slice(0, 3).join(',');
       const endpoint = genreParam
-        ? `discover/movie?with_genres=${genreParam}&page=1&sort_by=popularity.desc`
-        : `movie/popular?page=1`;
+        ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
+        : `movie/popular?page=${recoPage}`;
       const data = await fetchFromTMDB(endpoint);
       if (data && data.results) {
         const ranked = rankCandidates((data.results as TMDBMovie[]), readHistory());
-        setRecoMovies((ranked as TMDBMovie[]).slice(0, 8));
+        setRecoMovies((ranked as TMDBMovie[]).slice(0, recoCount));
       } else {
         setRecoMovies([]);
       }
     })();
-  }, [period, user]);
+  }, [period, user, recoPage, recoCount]);
+
+  // Recalculate recoCount when localStorage history changes (e.g., cleared in Settings)
+  useEffect(() => {
+    const recompute = () => {
+      const h = readHistory();
+      const totalEvents = (h.events || []).length;
+      const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
+      setRecoCount(desired);
+    };
+    const onStorage = () => recompute();
+    const onCustom = () => recompute();
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('cinepulse_history_changed', onCustom as EventListener);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('cinepulse_history_changed', onCustom as EventListener);
+    };
+  }, []);
 
   const fetchFromTMDB = async (endpoint: string, opts?: { retries?: number; timeoutMs?: number }) => {
     const retries = opts?.retries ?? 2;
@@ -482,6 +505,32 @@ const EnhancedTrending = () => {
                 <div className="mt-2 text-sm font-medium line-clamp-2 tv-card-title">{m.title}</div>
               </button>
             ))}
+          </div>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            {[1,2,3,4].map((p) => (
+              <Button
+                key={p}
+                variant={recoPage === p ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setRecoPage(p)}
+              >
+                {p}
+              </Button>
+            ))}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setRecoCount((c) => Math.min(24, c + 6))}
+            >
+              More
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRecoPage(prev => (prev >= 4 ? 1 : prev + 1))}
+            >
+              Next
+            </Button>
           </div>
         </div>
       )}
