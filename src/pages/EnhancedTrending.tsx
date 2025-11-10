@@ -165,8 +165,8 @@ const EnhancedTrending = () => {
   }, [recoPage]);
 
   const fetchFromTMDB = async (endpoint: string, opts?: { retries?: number; timeoutMs?: number }) => {
-    const retries = opts?.retries ?? 2;
-    const timeoutMs = opts?.timeoutMs ?? 8000;
+    const retries = opts?.retries ?? 1;
+    const timeoutMs = opts?.timeoutMs ?? 5000;
     const invoke = () => supabase.functions.invoke('tmdb-movies', { body: { endpoint } });
 
     const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
