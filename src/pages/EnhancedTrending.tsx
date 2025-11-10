@@ -1,3 +1,24 @@
+  // Simple local cache for TMDB responses (shared key with Movies page)
+  const CACHE_KEY = 'tmdb_cache_v1';
+  const getCacheBucket = (): Record<string, { ts: number; data: any }> => {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch { return {}; }
+  };
+  const setCacheBucket = (bucket: Record<string, { ts: number; data: any }>) => {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(bucket)); } catch {}
+  };
+  const readCached = (endpoint: string, maxAgeMs = 30 * 60 * 1000) => {
+    const bucket = getCacheBucket();
+    const entry = bucket[endpoint];
+    if (!entry) return null;
+    if (Date.now() - entry.ts > maxAgeMs) return null;
+    return entry.data;
+  };
+  const writeCached = (endpoint: string, data: any) => {
+    const bucket = getCacheBucket();
+    bucket[endpoint] = { ts: Date.now(), data };
+    setCacheBucket(bucket);
+  };
+
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -130,6 +151,7 @@ const EnhancedTrending = () => {
       try {
         const { data, error } = await withTimeout(invoke());
         if ((error as any)) throw error;
+        try { writeCached(endpoint, data); } catch {}
         return data as any;
       } catch (e) {
         lastErr = e;
@@ -142,25 +164,62 @@ const EnhancedTrending = () => {
 
   const fetchTrendingContent = async () => {
     setLoading(true);
-    
-    const [moviesData, tvData] = await Promise.all([
-      fetchFromTMDB(`trending/movie/${period}`),
-      fetchFromTMDB(`trending/tv/${period}`)
-    ]);
-    
-    if (moviesData) {
-      const results = (moviesData.results || []) as TMDBMovie[];
-      const ranked = rankCandidates(results, readHistory());
+    const epMovie = `trending/movie/${period}`;
+    const epTV = `trending/tv/${period}`;
+    // Prefill from cache to avoid empty UI on slow networks
+    const cachedMovie = readCached(epMovie);
+    const cachedTV = readCached(epTV);
+    if (cachedMovie?.results && movies.length === 0) {
+      const ranked = rankCandidates((cachedMovie.results as TMDBMovie[]), readHistory());
       setMovies(ranked as TMDBMovie[]);
     }
-    
-    if (tvData) {
-      const raw = (tvData.results || []) as any[];
+    if (cachedTV?.results && tvShows.length === 0) {
+      const raw = (cachedTV.results || []) as any[];
       const normalized = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
       const ranked = rankCandidates(normalized, readHistory());
       setTvShows(ranked as TMDBMovie[]);
     }
-    
+
+    const [moviesData, tvData] = await Promise.all([
+      fetchFromTMDB(epMovie),
+      fetchFromTMDB(epTV)
+    ]);
+
+    let movieList: TMDBMovie[] = [];
+    let tvList: TMDBMovie[] = [];
+    if (moviesData?.results) movieList = (moviesData.results || []) as TMDBMovie[];
+    if (tvData?.results) {
+      const raw = (tvData.results || []) as any[];
+      tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+    }
+
+    // Fallback to popular if trending fails
+    if (movieList.length === 0) {
+      const pop = await fetchFromTMDB('movie/popular?page=1');
+      if (pop?.results) movieList = (pop.results as TMDBMovie[]);
+    }
+    if (tvList.length === 0) {
+      const pop = await fetchFromTMDB('tv/popular?page=1');
+      if (pop?.results) {
+        const raw = (pop.results || []) as any[];
+        tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+      }
+    }
+
+    // Preserve previous lists if still empty
+    if (movieList.length === 0 && movies.length > 0) {
+      // keep existing
+    } else {
+      const ranked = rankCandidates(movieList, readHistory());
+      setMovies(ranked as TMDBMovie[]);
+    }
+    if (tvList.length === 0 && tvShows.length > 0) {
+      // keep existing
+    } else {
+      const ranked = rankCandidates(tvList, readHistory());
+      setTvShows(ranked as TMDBMovie[]);
+    }
+
     setLoading(false);
   };
 
