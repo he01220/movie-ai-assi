@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import VideoPlayerModal from "@/components/VideoPlayerModal";
-import { logQuery, logExternalSearch, logTrailerPlay, logMovieOpen, readHistory, getTopGenresFromHistory, hydrateHistoryFromSupabase } from "@/utils/history";
+import { logQuery, logExternalSearch, logTrailerPlay, logMovieOpen, readHistory, hydrateHistoryFromSupabase } from "@/utils/history";
 import { rankCandidates } from "@/utils/reco";
 
 interface TMDBMovie {
@@ -67,9 +67,6 @@ const EnhancedMovies = () => {
   const [videoKey, setVideoKey] = useState<string | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
-  const [recoMovies, setRecoMovies] = useState<TMDBMovie[]>([]);
-  const [recoPage, setRecoPage] = useState(1);
-  const [recoCount, setRecoCount] = useState<number>(8);
   const [showToGenres, setShowToGenres] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -87,26 +84,7 @@ const EnhancedMovies = () => {
       fetchUserPreferences();
     }
     (async () => { try { if (user?.id) await hydrateHistoryFromSupabase(); } catch {}; })();
-    // fetch personalized recommendations (top genres)
-    (async () => {
-      const top = getTopGenresFromHistory();
-      const h = readHistory();
-      const totalEvents = (h.events || []).length;
-      const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
-      if (desired !== recoCount) setRecoCount(desired);
-      const genreParam = top.slice(0, 3).join(',');
-      const endpoint = genreParam
-        ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
-        : `movie/popular?page=${recoPage}`;
-      const data = await fetchFromTMDB(endpoint);
-      if (data && data.results) {
-        const ranked = rankCandidates((data.results as TMDBMovie[]), readHistory());
-        setRecoMovies((ranked as TMDBMovie[]).slice(0, recoCount));
-      } else {
-        setRecoMovies([]);
-      }
-    })();
-  }, [user, currentPage, recoPage, recoCount]);
+  }, [user]);
 
   // Smooth scroll to Genres when URL has #genres
   useEffect(() => {
@@ -118,23 +96,7 @@ const EnhancedMovies = () => {
     }
   }, [location.hash]);
 
-  // Recalculate recoCount when localStorage history changes (e.g., cleared in Settings)
-  useEffect(() => {
-    const recompute = () => {
-      const h = readHistory();
-      const totalEvents = (h.events || []).length;
-      const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
-      setRecoCount(desired);
-    };
-    const onStorage = () => recompute();
-    const onCustom = () => recompute();
-    window.addEventListener('storage', onStorage);
-    window.addEventListener('cinepulse_history_changed', onCustom as EventListener);
-    return () => {
-      window.removeEventListener('storage', onStorage);
-      window.removeEventListener('cinepulse_history_changed', onCustom as EventListener);
-    };
-  }, []);
+  // (Recommendations removed from Movies; section lives in Trending)
 
   // Load initial state from URL (?q=...&genre=...)
   useEffect(() => {
@@ -260,7 +222,14 @@ const EnhancedMovies = () => {
     const endpoint = genreOverride != null 
       ? `discover/movie?with_genres=${genreOverride}&page=${pageOverride}&sort_by=popularity.desc`
       : `movie/popular?page=${pageOverride}`;
-    
+    // Prefill from cache for instant UI if available
+    const cachedPrefill = readCached(endpoint) || (genreOverride != null ? readCached(`movie/popular?page=${pageOverride}`) : null);
+    if (cachedPrefill && movies.length === 0) {
+      const results = (cachedPrefill.results || []) as TMDBMovie[];
+      const ranked = rankCandidates(results, readHistory());
+      setMovies(ranked as TMDBMovie[]);
+      setTotalPages(Math.min(cachedPrefill.total_pages || 1, 500));
+    }
     // Try live first
     let data = await fetchFromTMDB(endpoint);
     // Fallback to popular if discover by genre failed
@@ -279,8 +248,11 @@ const EnhancedMovies = () => {
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(data.total_pages || 1, 500)); // Limit to 500 pages
     } else {
-      setError('Unable to load movies. Please try again.');
-      setMovies([]);
+      // Only show error if we have nothing to show
+      if (movies.length === 0) {
+        setError('Unable to load movies. Please try again.');
+        setMovies([]);
+      }
     }
     setLoading(false);
   };
@@ -296,6 +268,15 @@ const EnhancedMovies = () => {
     setError(null);
     setLastAction("search");
     const endpoint = `search/movie?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
+    // Prefill from cache for instant UI
+    const cachedPrefill = readCached(endpoint);
+    if (cachedPrefill && movies.length === 0) {
+      let results = (cachedPrefill.results || []) as TMDBMovie[];
+      if (genreOverride != null) results = results.filter(m => m.genre_ids?.includes(genreOverride));
+      const ranked = rankCandidates(results, readHistory());
+      setMovies(ranked as TMDBMovie[]);
+      setTotalPages(Math.min(cachedPrefill.total_pages || 1, 500));
+    }
     let data = await fetchFromTMDB(endpoint);
     // Fallback to popular if search fails
     if (!data) {
@@ -316,8 +297,10 @@ const EnhancedMovies = () => {
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(data.total_pages || 1, 500));
     } else {
-      setError('Unable to load search results. Please try again.');
-      setMovies([]);
+      if (movies.length === 0) {
+        setError('Unable to load search results. Please try again.');
+        setMovies([]);
+      }
     }
     setLoading(false);
   };
@@ -623,83 +606,7 @@ const EnhancedMovies = () => {
         
       </div>
 
-      {/* Recommended for you */}
-      {recoMovies.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold mb-4">Recommended for you</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {recoMovies.map((m) => (
-              <button
-                key={m.id}
-                className="text-left group"
-                onClick={() => { try { logMovieOpen(m.id, m.title, m.genre_ids); } catch {}; navigate(`/movie/${m.id}`); }}
-              >
-                <div className="relative aspect-[2/3] overflow-hidden rounded-lg">
-                  <img
-                    src={m.poster_path 
-                      ? (m.poster_path.startsWith('http') 
-                        ? m.poster_path 
-                        : `https://image.tmdb.org/t/p/w500${m.poster_path}`)
-                      : 'https://images.unsplash.com/photo-1489599735734-79b4169f2a78?w=500&h=750&fit=crop'}
-                    alt={m.title}
-                    loading="lazy"
-                    decoding="async"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                  />
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handlePlayMovie(m.id, m.title); }}
-                      >
-                        <Play size={14} className="mr-1" /> Trailer
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); try { logExternalSearch(m.title, m.id); } catch {}; window.open(`https://www.google.com/search?q=${encodeURIComponent(`Watch ${m.title} full movie`)}`,'_blank'); }}
-                      >
-                        <Globe size={14} className="mr-1" /> Browser
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-2 text-sm font-medium line-clamp-2 tv-card-title">{m.title}</div>
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 flex items-center justify-center gap-2">
-            {[1,2,3,4].map((p) => (
-              <Button
-                key={p}
-                variant={recoPage === p ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setRecoPage(p)}
-              >
-                {p}
-              </Button>
-            ))}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setRecoCount((c) => Math.min(24, c + 6))}
-            >
-              More
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRecoPage(prev => (prev >= 4 ? 1 : prev + 1))}
-            >
-              Next
-            </Button>
-            
-          </div>
-        </div>
-      )}
+      {/* Recommended section removed from Movies; it is available in Trending */}
 
       {/* Movies Grid / Empty & Error States */}
       {movies.length === 0 ? (
