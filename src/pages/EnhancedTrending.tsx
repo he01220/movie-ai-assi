@@ -146,8 +146,9 @@ const EnhancedTrending = () => {
     }
     
     if (tvData) {
-      const results = (tvData.results || []) as TMDBMovie[];
-      const ranked = rankCandidates(results, readHistory());
+      const raw = (tvData.results || []) as any[];
+      const normalized = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+      const ranked = rankCandidates(normalized, readHistory());
       setTvShows(ranked as TMDBMovie[]);
     }
     
@@ -463,7 +464,7 @@ const EnhancedTrending = () => {
       </div>
 
       {/* Recommended for you */}
-      {recoMovies.length > 0 && (
+      {recoMovies.length > 0 ? (
         <div className="mb-8">
           <h2 className="text-2xl font-bold mb-4">Recommended for you</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -531,6 +532,30 @@ const EnhancedTrending = () => {
             >
               Next
             </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold mb-4">Popular Now</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {[...movies, ...tvShows].slice(0, 12).map((m) => (
+              <button
+                key={m.id}
+                className="text-left group"
+                onClick={() => { try { logMovieOpen(m.id, m.title, m.genre_ids); } catch {}; navigate(`/movie/${m.id}`); }}
+              >
+                <div className="relative aspect-[2/3] overflow-hidden rounded-lg">
+                  <img
+                    src={m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : 'https://images.unsplash.com/photo-1489599735734-79b4169f2a78?w=500&h=750&fit=crop'}
+                    alt={m.title}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                </div>
+                <div className="mt-2 text-sm font-medium line-clamp-2 tv-card-title">{m.title}</div>
+              </button>
+            ))}
           </div>
         </div>
       )}
