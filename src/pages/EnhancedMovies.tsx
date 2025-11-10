@@ -313,9 +313,22 @@ const EnhancedMovies = () => {
     setError(null);
     setLastAction("popular");
     if (!contentType) {
-      // Mixed mode: fetch both popular
+      // Mixed mode: fetch both popular, with cache prefill
       const epMovie = `movie/popular?page=${pageOverride}`;
       const epTV = `tv/popular?page=${pageOverride}`;
+      const cachedMovie = readCached(epMovie);
+      const cachedTV = readCached(epTV);
+      if ((cachedMovie?.results || cachedTV?.results) && movies.length === 0) {
+        let pre: TMDBMovie[] = [];
+        if (cachedMovie?.results) pre = pre.concat(cachedMovie.results as TMDBMovie[]);
+        if (cachedTV?.results) {
+          const normalized = (cachedTV.results as any[]).map(it => ({ ...it, title: it.title || it.name }));
+          pre = pre.concat(normalized as TMDBMovie[]);
+        }
+        const rankedPre = rankCandidates(pre, readHistory());
+        setMovies(rankedPre as TMDBMovie[]);
+        setTotalPages(Math.min(Math.max(cachedMovie?.total_pages || 1, cachedTV?.total_pages || 1), 500));
+      }
       const [movieData, tvData] = await Promise.all([
         fetchFromTMDB(epMovie),
         fetchFromTMDB(epTV)
@@ -325,6 +338,28 @@ const EnhancedMovies = () => {
       if (tvData?.results) {
         const normalized = (tvData.results as any[]).map(it => ({ ...it, title: it.title || it.name }));
         combined = combined.concat(normalized as TMDBMovie[]);
+      }
+      if (combined.length === 0 && (cachedMovie?.results || cachedTV?.results)) {
+        // already set from cache above; keep UI
+        setLoading(false);
+        return;
+      }
+      // Fallback to trending if popular failed
+      if (combined.length === 0) {
+        const [trendMovie, trendTV] = await Promise.all([
+          fetchFromTMDB('trending/movie/day'),
+          fetchFromTMDB('trending/tv/day')
+        ]);
+        if (trendMovie?.results) combined = combined.concat(trendMovie.results as TMDBMovie[]);
+        if (trendTV?.results) {
+          const normalized = (trendTV.results as any[]).map(it => ({ ...it, title: it.title || it.name }));
+          combined = combined.concat(normalized as TMDBMovie[]);
+        }
+      }
+      if (combined.length === 0 && movies.length > 0) {
+        // Preserve previous list to avoid empty UI
+        setLoading(false);
+        return;
       }
       const ranked = rankCandidates(combined, readHistory());
       setMovies(ranked as TMDBMovie[]);
@@ -376,9 +411,22 @@ const EnhancedMovies = () => {
     setError(null);
     setLastAction("search");
     if (!contentType) {
-      // Mixed search: both movie and tv
+      // Mixed search: both movie and tv with cache prefill
       const epMovie = `search/movie?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
       const epTV = `search/tv?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
+      const cachedMovie = readCached(epMovie);
+      const cachedTV = readCached(epTV);
+      if ((cachedMovie?.results || cachedTV?.results) && movies.length === 0) {
+        let pre: TMDBMovie[] = [];
+        if (cachedMovie?.results) pre = pre.concat(cachedMovie.results as TMDBMovie[]);
+        if (cachedTV?.results) {
+          const normalized = (cachedTV.results as any[]).map(it => ({ ...it, title: it.title || it.name }));
+          pre = pre.concat(normalized as TMDBMovie[]);
+        }
+        const rankedPre = rankCandidates(pre, readHistory());
+        setMovies(rankedPre as TMDBMovie[]);
+        setTotalPages(Math.min(Math.max(cachedMovie?.total_pages || 1, cachedTV?.total_pages || 1), 500));
+      }
       const [movieData, tvData] = await Promise.all([
         fetchFromTMDB(epMovie),
         fetchFromTMDB(epTV)
@@ -388,6 +436,26 @@ const EnhancedMovies = () => {
       if (tvData?.results) {
         const normalized = (tvData.results as any[]).map(it => ({ ...it, title: it.title || it.name }));
         results = results.concat(normalized as TMDBMovie[]);
+      }
+      if (results.length === 0 && (cachedMovie?.results || cachedTV?.results)) {
+        setLoading(false);
+        return;
+      }
+      // Fallback: if no search results, try mixed popular as a graceful fallback
+      if (results.length === 0) {
+        const [moviePop, tvPop] = await Promise.all([
+          fetchFromTMDB(`movie/popular?page=${pageOverride}`),
+          fetchFromTMDB(`tv/popular?page=${pageOverride}`)
+        ]);
+        if (moviePop?.results) results = results.concat(moviePop.results as TMDBMovie[]);
+        if (tvPop?.results) {
+          const normalized = (tvPop.results as any[]).map(it => ({ ...it, title: it.title || it.name }));
+          results = results.concat(normalized as TMDBMovie[]);
+        }
+      }
+      if (results.length === 0 && movies.length > 0) {
+        setLoading(false);
+        return;
       }
       const ranked = rankCandidates(results, readHistory());
       setMovies(ranked as TMDBMovie[]);
