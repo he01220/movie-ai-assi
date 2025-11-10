@@ -65,9 +65,8 @@ const EnhancedTrending = () => {
     if (user) {
       fetchUserPreferences();
     }
-    (async () => { try { if (user?.id) await hydrateHistoryFromSupabase(); } catch {}; })();
-    // personalized reco by history top genres
     (async () => {
+      try { if (user?.id) await hydrateHistoryFromSupabase(); } catch {}
       const top = getTopGenresFromHistory();
       const totalEvents = (readHistory().events || []).length;
       const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
@@ -88,21 +87,31 @@ const EnhancedTrending = () => {
 
   // Recalculate recoCount when localStorage history changes (e.g., cleared in Settings)
   useEffect(() => {
-    const recompute = () => {
+    const recompute = async () => {
       const h = readHistory();
       const totalEvents = (h.events || []).length;
       const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
       setRecoCount(desired);
+      const top = getTopGenresFromHistory();
+      const genreParam = top.slice(0, 3).join(',');
+      const endpoint = genreParam
+        ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
+        : `movie/popular?page=${recoPage}`;
+      const data = await fetchFromTMDB(endpoint);
+      if (data && data.results) {
+        const ranked = rankCandidates((data.results as TMDBMovie[]), readHistory());
+        setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
+      }
     };
-    const onStorage = () => recompute();
-    const onCustom = () => recompute();
+    const onStorage = () => { recompute(); };
+    const onCustom = () => { recompute(); };
     window.addEventListener('storage', onStorage);
     window.addEventListener('cinepulse_history_changed', onCustom as EventListener);
     return () => {
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('cinepulse_history_changed', onCustom as EventListener);
     };
-  }, []);
+  }, [recoPage]);
 
   const fetchFromTMDB = async (endpoint: string, opts?: { retries?: number; timeoutMs?: number }) => {
     const retries = opts?.retries ?? 2;
