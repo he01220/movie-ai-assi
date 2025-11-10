@@ -660,15 +660,14 @@ const EnhancedMovies = () => {
               }}
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
-                {/* Category toggle INSIDE the row (TV only) */}
+                {/* Category label (TV only) */}
                 <Button
-                  variant={contentType === 'tv' ? 'default' : 'outline'}
+                  variant="secondary"
                   size="sm"
-                  onClick={() => { if (contentType !== 'tv') { setContentType('tv'); setCurrentPage(1); setSelectedGenre(null); } }}
-                  className="snap-start"
-                  aria-pressed={contentType === 'tv'}
+                  disabled
+                  className="snap-start cursor-default opacity-90"
                 >
-                  Сериалы
+                  TV Series
                 </Button>
                 <Button
                   variant={selectedGenre === null ? "default" : "outline"}
