@@ -316,8 +316,10 @@ const EnhancedMovies = () => {
       // Mixed mode: fetch both popular, with cache prefill
       const epMovie = `movie/popular?page=${pageOverride}`;
       const epTV = `tv/popular?page=${pageOverride}`;
+      const epMix = `mix/popular?page=${pageOverride}`;
       const cachedMovie = readCached(epMovie);
       const cachedTV = readCached(epTV);
+      const cachedMix = readCached(epMix, 24 * 60 * 60 * 1000);
       if ((cachedMovie?.results || cachedTV?.results) && movies.length === 0) {
         let pre: TMDBMovie[] = [];
         if (cachedMovie?.results) pre = pre.concat(cachedMovie.results as TMDBMovie[]);
@@ -328,6 +330,10 @@ const EnhancedMovies = () => {
         const rankedPre = rankCandidates(pre, readHistory());
         setMovies(rankedPre as TMDBMovie[]);
         setTotalPages(Math.min(Math.max(cachedMovie?.total_pages || 1, cachedTV?.total_pages || 1), 500));
+      } else if (cachedMix?.results && movies.length === 0) {
+        const rankedPre = rankCandidates((cachedMix.results as TMDBMovie[]), readHistory());
+        setMovies(rankedPre as TMDBMovie[]);
+        setTotalPages(Math.min(cachedMix.total_pages || 1, 500));
       }
       const [movieData, tvData] = await Promise.all([
         fetchFromTMDB(epMovie),
@@ -359,11 +365,22 @@ const EnhancedMovies = () => {
       if (combined.length === 0 && movies.length > 0) {
         // Preserve previous list to avoid empty UI
         setLoading(false);
+        setError('Unable to refresh content. Showing previous results.');
+        return;
+      }
+      if (combined.length === 0 && !movies.length && cachedMix?.results) {
+        // Use last successful mixed snapshot
+        const rankedPre = rankCandidates((cachedMix.results as TMDBMovie[]), readHistory());
+        setMovies(rankedPre as TMDBMovie[]);
+        setTotalPages(Math.min(cachedMix.total_pages || 1, 500));
+        setLoading(false);
+        setError('Working offline. Showing recent popular titles.');
         return;
       }
       const ranked = rankCandidates(combined, readHistory());
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(Math.max(movieData?.total_pages || 1, tvData?.total_pages || 1), 500));
+      try { writeCached(epMix, { results: ranked, total_pages: 1 }); } catch {}
       setLoading(false);
       return;
     }
@@ -414,8 +431,10 @@ const EnhancedMovies = () => {
       // Mixed search: both movie and tv with cache prefill
       const epMovie = `search/movie?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
       const epTV = `search/tv?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
+      const epMixSearch = `mix/search?q=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
       const cachedMovie = readCached(epMovie);
       const cachedTV = readCached(epTV);
+      const cachedMixSearch = readCached(epMixSearch, 12 * 60 * 60 * 1000);
       if ((cachedMovie?.results || cachedTV?.results) && movies.length === 0) {
         let pre: TMDBMovie[] = [];
         if (cachedMovie?.results) pre = pre.concat(cachedMovie.results as TMDBMovie[]);
@@ -426,6 +445,10 @@ const EnhancedMovies = () => {
         const rankedPre = rankCandidates(pre, readHistory());
         setMovies(rankedPre as TMDBMovie[]);
         setTotalPages(Math.min(Math.max(cachedMovie?.total_pages || 1, cachedTV?.total_pages || 1), 500));
+      } else if (cachedMixSearch?.results && movies.length === 0) {
+        const rankedPre = rankCandidates((cachedMixSearch.results as TMDBMovie[]), readHistory());
+        setMovies(rankedPre as TMDBMovie[]);
+        setTotalPages(Math.min(cachedMixSearch.total_pages || 1, 500));
       }
       const [movieData, tvData] = await Promise.all([
         fetchFromTMDB(epMovie),
@@ -439,6 +462,7 @@ const EnhancedMovies = () => {
       }
       if (results.length === 0 && (cachedMovie?.results || cachedTV?.results)) {
         setLoading(false);
+        setError('No live results. Showing cached content.');
         return;
       }
       // Fallback: if no search results, try mixed popular as a graceful fallback
@@ -455,11 +479,21 @@ const EnhancedMovies = () => {
       }
       if (results.length === 0 && movies.length > 0) {
         setLoading(false);
+        setError('No results. Keeping previous content.');
+        return;
+      }
+      if (results.length === 0 && !movies.length && cachedMixSearch?.results) {
+        const rankedPre = rankCandidates((cachedMixSearch.results as TMDBMovie[]), readHistory());
+        setMovies(rankedPre as TMDBMovie[]);
+        setTotalPages(Math.min(cachedMixSearch.total_pages || 1, 500));
+        setLoading(false);
+        setError('Working offline. Showing recent search snapshot.');
         return;
       }
       const ranked = rankCandidates(results, readHistory());
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(Math.max(movieData?.total_pages || 1, tvData?.total_pages || 1), 500));
+      try { writeCached(epMixSearch, { results: ranked, total_pages: 1 }); } catch {}
       setLoading(false);
       return;
     }
