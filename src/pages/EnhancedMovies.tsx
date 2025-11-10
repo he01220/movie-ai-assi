@@ -30,25 +30,23 @@ interface Genre {
   name: string;
 }
 
+// TV genres map (TMDB TV genre IDs)
 const GENRE_MAP: { [key: number]: string } = {
-  28: "Action",
-  12: "Adventure", 
+  10759: "Action & Adventure",
   16: "Animation",
   35: "Comedy",
   80: "Crime",
   99: "Documentary",
   18: "Drama",
   10751: "Family",
-  14: "Fantasy",
-  36: "History",
-  27: "Horror",
-  10402: "Music",
+  10762: "Kids",
   9648: "Mystery",
-  10749: "Romance",
-  878: "Science Fiction",
-  10770: "TV Movie",
-  53: "Thriller",
-  10752: "War",
+  10763: "News",
+  10764: "Reality",
+  10765: "Sci-Fi & Fantasy",
+  10766: "Soap",
+  10767: "Talk",
+  10768: "War & Politics",
   37: "Western"
 };
 
@@ -262,8 +260,8 @@ const EnhancedMovies = () => {
   };
 
   const fetchFromTMDB = async (endpoint: string, opts?: { retries?: number; timeoutMs?: number }) => {
-    const retries = opts?.retries ?? 1;
-    const timeoutMs = opts?.timeoutMs ?? 6000;
+    const retries = opts?.retries ?? 2;
+    const timeoutMs = opts?.timeoutMs ?? 9000;
     const invoke = () => supabase.functions.invoke('tmdb-movies', { body: { endpoint } });
 
     const withTimeout = <T,>(p: Promise<T>): Promise<T> => {
@@ -310,9 +308,16 @@ const EnhancedMovies = () => {
     if (!data && selectedGenre) {
       data = await fetchFromTMDB(`${contentType}/popular?page=${currentPage}`);
     }
+    // Cross-type fallback to movie popular to avoid empty UI
+    if (!data) {
+      data = await fetchFromTMDB(`movie/popular?page=${currentPage}`);
+    }
     // Fallback to cache if still failing
     if (!data) {
-      const cached = readCached(endpoint) || (selectedGenre ? readCached(`${contentType}/popular?page=${currentPage}`) : null);
+      const cached =
+        readCached(endpoint) ||
+        (selectedGenre ? readCached(`${contentType}/popular?page=${currentPage}`) : null) ||
+        readCached(`movie/popular?page=${currentPage}`);
       if (cached) data = cached;
     }
     
@@ -358,8 +363,19 @@ const EnhancedMovies = () => {
     if (!data) {
       data = await fetchFromTMDB(`${contentType}/popular?page=${currentPage}`);
     }
+    // Cross-type fallback to movie search/popular
     if (!data) {
-      const cached = readCached(endpoint) || readCached(`${contentType}/popular?page=${currentPage}`);
+      data = await fetchFromTMDB(`search/movie?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`);
+    }
+    if (!data) {
+      data = await fetchFromTMDB(`movie/popular?page=${currentPage}`);
+    }
+    if (!data) {
+      const cached =
+        readCached(endpoint) ||
+        readCached(`${contentType}/popular?page=${currentPage}`) ||
+        readCached(`search/movie?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`) ||
+        readCached(`movie/popular?page=${currentPage}`);
       if (cached) data = cached;
     }
     
