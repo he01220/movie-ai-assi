@@ -67,6 +67,8 @@ const EnhancedMovies = () => {
   const [videoKey, setVideoKey] = useState<string | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
+  // Content category: movies or tv
+  const [contentType, setContentType] = useState<'movie' | 'tv'>('movie');
   const [showToGenres, setShowToGenres] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -132,7 +134,7 @@ const EnhancedMovies = () => {
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [searchQuery, selectedGenre, currentPage]);
+  }, [searchQuery, selectedGenre, currentPage, contentType]);
 
   // Show Back-to-Top button on scroll
   useEffect(() => {
@@ -220,10 +222,10 @@ const EnhancedMovies = () => {
     setError(null);
     setLastAction("popular");
     const endpoint = genreOverride != null 
-      ? `discover/movie?with_genres=${genreOverride}&page=${pageOverride}&sort_by=popularity.desc`
-      : `movie/popular?page=${pageOverride}`;
+      ? `discover/${contentType}?with_genres=${genreOverride}&page=${pageOverride}&sort_by=popularity.desc`
+      : `${contentType}/popular?page=${pageOverride}`;
     // Prefill from cache for instant UI if available
-    const cachedPrefill = readCached(endpoint) || (genreOverride != null ? readCached(`movie/popular?page=${pageOverride}`) : null);
+    const cachedPrefill = readCached(endpoint) || (genreOverride != null ? readCached(`${contentType}/popular?page=${pageOverride}`) : null);
     if (cachedPrefill && movies.length === 0) {
       const results = (cachedPrefill.results || []) as TMDBMovie[];
       const ranked = rankCandidates(results, readHistory());
@@ -234,11 +236,11 @@ const EnhancedMovies = () => {
     let data = await fetchFromTMDB(endpoint);
     // Fallback to popular if discover by genre failed
     if (!data && selectedGenre) {
-      data = await fetchFromTMDB(`movie/popular?page=${currentPage}`);
+      data = await fetchFromTMDB(`${contentType}/popular?page=${currentPage}`);
     }
     // Fallback to cache if still failing
     if (!data) {
-      const cached = readCached(endpoint) || (selectedGenre ? readCached(`movie/popular?page=${currentPage}`) : null);
+      const cached = readCached(endpoint) || (selectedGenre ? readCached(`${contentType}/popular?page=${currentPage}`) : null);
       if (cached) data = cached;
     }
     
@@ -267,7 +269,7 @@ const EnhancedMovies = () => {
     setLoading(true);
     setError(null);
     setLastAction("search");
-    const endpoint = `search/movie?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
+    const endpoint = `search/${contentType}?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`;
     // Prefill from cache for instant UI
     const cachedPrefill = readCached(endpoint);
     if (cachedPrefill && movies.length === 0) {
@@ -280,10 +282,10 @@ const EnhancedMovies = () => {
     let data = await fetchFromTMDB(endpoint);
     // Fallback to popular if search fails
     if (!data) {
-      data = await fetchFromTMDB(`movie/popular?page=${currentPage}`);
+      data = await fetchFromTMDB(`${contentType}/popular?page=${currentPage}`);
     }
     if (!data) {
-      const cached = readCached(endpoint) || readCached(`movie/popular?page=${currentPage}`);
+      const cached = readCached(endpoint) || readCached(`${contentType}/popular?page=${currentPage}`);
       if (cached) data = cached;
     }
     
@@ -449,7 +451,7 @@ const EnhancedMovies = () => {
     setSelectedMovie({ title: movieTitle, id: movieId });
     
     // Fetch trailer from TMDB
-    const data = await fetchFromTMDB(`movie/${movieId}/videos`);
+    const data = await fetchFromTMDB(`${contentType}/${movieId}/videos`);
     
     if (data && data.results && data.results.length > 0) {
       // Find official trailer or teaser
@@ -533,9 +535,26 @@ const EnhancedMovies = () => {
           </Button>
         </form>
 
-        {/* Genre Filter (Sticky) */}
+        {/* Category + Genre Filter (Sticky) */}
         <div className="sticky top-16 z-10 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b overflow-hidden">
           <div className="relative overflow-hidden">
+            {/* Category toggle */}
+            <div className="flex gap-2 px-4 pt-3">
+              <Button
+                variant={contentType === 'movie' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => { if (contentType !== 'movie') { setContentType('movie'); setCurrentPage(1); } }}
+              >
+                Movies
+              </Button>
+              <Button
+                variant={contentType === 'tv' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => { if (contentType !== 'tv') { setContentType('tv'); setCurrentPage(1); } }}
+              >
+                TV
+              </Button>
+            </div>
             {/* Scrollable genres row (directly scrollable element) */}
             <div
               id="genres"
@@ -696,11 +715,11 @@ const EnhancedMovies = () => {
               </div>
 
               <CardContent className="p-4">
-                <h3 className="font-semibold mb-2 line-clamp-2">{movie.title}</h3>
+                <h3 className="font-semibold mb-2 line-clamp-2">{(movie as any).title || (movie as any).name}</h3>
                 
                 <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
                   <Calendar size={12} />
-                  <span>{movie.release_date?.split('-')[0] || 'N/A'}</span>
+                  <span>{(movie as any).release_date?.split('-')[0] || (movie as any).first_air_date?.split('-')[0] || 'N/A'}</span>
                 </div>
 
                 <div className="flex flex-wrap gap-1 mb-3">
@@ -715,13 +734,24 @@ const EnhancedMovies = () => {
                   {movie.overview}
                 </p>
 
-                <Button 
-                  onClick={() => { try { logMovieOpen(movie.id, movie.title, movie.genre_ids); } catch {}; navigate(`/movie/${movie.id}`); }}
-                  className="w-full"
-                  size="sm"
-                >
-                  View Details
-                </Button>
+                {contentType === 'movie' ? (
+                  <Button 
+                    onClick={() => { try { logMovieOpen(movie.id, (movie as any).title, movie.genre_ids); } catch {}; navigate(`/movie/${movie.id}`); }}
+                    className="w-full"
+                    size="sm"
+                  >
+                    View Details
+                  </Button>
+                ) : (
+                  <Button 
+                    onClick={() => { try { logExternalSearch((movie as any).name || (movie as any).title, movie.id); } catch {}; window.open(`https://www.google.com/search?q=${encodeURIComponent(`Watch ${(movie as any).name || (movie as any).title} full series`)}`,'_blank'); }}
+                    className="w-full"
+                    size="sm"
+                    variant="secondary"
+                  >
+                    Find to Watch
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}
