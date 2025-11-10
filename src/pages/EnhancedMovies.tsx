@@ -251,9 +251,8 @@ const EnhancedMovies = () => {
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(data.total_pages || 1, 500)); // Limit to 500 pages
     } else {
-      setError(null);
+      setError('Unable to load movies. Please try again.');
       setMovies([]);
-      // Silent soft failure to avoid disruptive alert; user sees empty grid state
     }
     setLoading(false);
   };
@@ -285,7 +284,7 @@ const EnhancedMovies = () => {
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(data.total_pages || 1, 500));
     } else {
-      setError(null);
+      setError('Unable to load search results. Please try again.');
       setMovies([]);
     }
     setLoading(false);
@@ -605,7 +604,11 @@ const EnhancedMovies = () => {
               >
                 <div className="relative aspect-[2/3] overflow-hidden rounded-lg">
                   <img
-                    src={m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : 'https://images.unsplash.com/photo-1489599735734-79b4169f2a78?w=500&h=750&fit=crop'}
+                    src={m.poster_path 
+                      ? (m.poster_path.startsWith('http') 
+                        ? m.poster_path 
+                        : `https://image.tmdb.org/t/p/w500${m.poster_path}`)
+                      : 'https://images.unsplash.com/photo-1489599735734-79b4169f2a78?w=500&h=750&fit=crop'}
                     alt={m.title}
                     loading="lazy"
                     decoding="async"
@@ -695,7 +698,9 @@ const EnhancedMovies = () => {
               <div className="relative aspect-[2/3] overflow-hidden">
                 <img
                   src={movie.poster_path 
-                    ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+                    ? (movie.poster_path.startsWith('http') 
+                      ? movie.poster_path 
+                      : `https://image.tmdb.org/t/p/w500${movie.poster_path}`)
                     : 'https://images.unsplash.com/photo-1489599735734-79b4169f2a78?w=500&h=750&fit=crop'
                   }
                   alt={movie.title}
