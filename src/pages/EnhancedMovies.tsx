@@ -665,8 +665,7 @@ const EnhancedMovies = () => {
                   variant={contentType === 'movie' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => { if (contentType !== 'movie') { setContentType('movie'); setCurrentPage(1); setSelectedGenre(null); } }}
-                  className="snap-start"
-                  aria-pressed={contentType === 'movie'}
+                  className={`snap-start ${contentType === 'movie' ? '' : 'text-muted-foreground border-muted-foreground'}`}
                 >
                   Movies
                 </Button>
@@ -674,8 +673,7 @@ const EnhancedMovies = () => {
                   variant={contentType === 'tv' ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => { if (contentType !== 'tv') { setContentType('tv'); setCurrentPage(1); setSelectedGenre(null); } }}
-                  className="snap-start"
-                  aria-pressed={contentType === 'tv'}
+                  className={`snap-start ${contentType === 'tv' ? '' : 'text-muted-foreground border-muted-foreground'}`}
                 >
                   TV Series
                 </Button>
