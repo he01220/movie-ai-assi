@@ -82,40 +82,47 @@ const EnhancedTrending = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let mounted = true;
     fetchTrendingContent();
     if (user) {
       fetchUserPreferences();
     }
     (async () => {
-      try { if (user?.id) await hydrateHistoryFromSupabase(); } catch {}
-      const top = getTopGenresFromHistory();
-      const totalEvents = (readHistory().events || []).length;
-      const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
-      if (desired !== recoCount) setRecoCount(desired);
-      const genreParam = top.slice(0, 3).join(',');
-      const endpoint = genreParam
-        ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
-        : `movie/popular?page=${recoPage}`;
-      // Prefill from cache for instant recommendations
-      const cached = readCached(endpoint);
-      if (cached?.results && (recoMovies.length === 0)) {
-        const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
-        setRecoMovies((ranked as TMDBMovie[]).slice(0, desired));
-      }
-      const data = await fetchFromTMDB(endpoint);
-      let list: TMDBMovie[] = [];
-      if (data?.results) {
-        list = (data.results as TMDBMovie[]);
-      } else {
-        // Fallback to popular if discover failed
-        const pop = await fetchFromTMDB(`movie/popular?page=${recoPage}`);
-        if (pop?.results) list = (pop.results as TMDBMovie[]);
-      }
-      if (list.length > 0) {
-        const ranked = rankCandidates(list, readHistory());
-        setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
+      try {
+        try { if (user?.id) await hydrateHistoryFromSupabase(); } catch {}
+        if (!mounted) return;
+        const top = getTopGenresFromHistory();
+        const totalEvents = (readHistory().events || []).length;
+        const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
+        if (desired !== recoCount) setRecoCount(desired);
+        const genreParam = top.slice(0, 3).join(',');
+        const endpoint = genreParam
+          ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
+          : `movie/popular?page=${recoPage}`;
+        // Prefill from cache for instant recommendations
+        const cached = readCached(endpoint);
+        if (mounted && cached?.results && (recoMovies.length === 0)) {
+          const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
+          setRecoMovies((ranked as TMDBMovie[]).slice(0, desired));
+        }
+        const data = await fetchFromTMDB(endpoint);
+        let list: TMDBMovie[] = [];
+        if (data?.results) {
+          list = (data.results as TMDBMovie[]);
+        } else {
+          // Fallback to popular if discover failed
+          const pop = await fetchFromTMDB(`movie/popular?page=${recoPage}`);
+          if (pop?.results) list = (pop.results as TMDBMovie[]);
+        }
+        if (mounted && list.length > 0) {
+          const ranked = rankCandidates(list, readHistory());
+          setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
+        }
+      } catch (e) {
+        // swallow errors for reco; do not affect rest of Trending
       }
     })();
+    return () => { mounted = false; };
   }, [period, user, recoPage, recoCount]);
 
   // Recalculate recoCount when localStorage history changes (e.g., cleared in Settings)
