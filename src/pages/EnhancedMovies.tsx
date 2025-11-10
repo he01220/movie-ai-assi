@@ -86,8 +86,8 @@ const EnhancedMovies = () => {
   const [videoKey, setVideoKey] = useState<string | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
-  // Content category selector
-  const [contentType, setContentType] = useState<'movie' | 'tv'>('movie');
+  // Content category selector (TV only by default)
+  const [contentType, setContentType] = useState<'movie' | 'tv'>('tv');
   // Ratings: per-user and aggregated per content
   const [userRatings, setUserRatings] = useState<Record<number, number>>({});
   const [avgRatings, setAvgRatings] = useState<Record<number, { avg: number; count: number }>>({});
@@ -651,23 +651,6 @@ const EnhancedMovies = () => {
         {/* Category + Genre Filter (Sticky) */}
         <div className="sticky top-16 z-10 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b overflow-hidden">
           <div className="relative overflow-hidden">
-            {/* Category toggle */}
-            <div className="flex gap-2 px-4 pt-3">
-              <Button
-                variant={contentType === 'movie' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => { if (contentType !== 'movie') { setContentType('movie'); setCurrentPage(1); setSelectedGenre(null); } }}
-              >
-                Movies
-              </Button>
-              <Button
-                variant={contentType === 'tv' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => { if (contentType !== 'tv') { setContentType('tv'); setCurrentPage(1); setSelectedGenre(null); } }}
-              >
-                TV
-              </Button>
-            </div>
             {/* Scrollable genres row (directly scrollable element) */}
             <div
               id="genres"
@@ -691,6 +674,16 @@ const EnhancedMovies = () => {
               }}
               style={{ WebkitOverflowScrolling: 'touch' }}
             >
+                {/* Category toggle INSIDE the row (TV only) */}
+                <Button
+                  variant={contentType === 'tv' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => { if (contentType !== 'tv') { setContentType('tv'); setCurrentPage(1); setSelectedGenre(null); } }}
+                  className="snap-start"
+                  aria-pressed={contentType === 'tv'}
+                >
+                  Сериалы
+                </Button>
                 <Button
                   variant={selectedGenre === null ? "default" : "outline"}
                   size="sm"
