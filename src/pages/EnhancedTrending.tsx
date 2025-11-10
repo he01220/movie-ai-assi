@@ -216,7 +216,7 @@ const EnhancedTrending = () => {
       tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
     }
 
-    // Fallback to popular if trending fails
+    // Fallback chain if trending fails: popular -> trending/week -> discover by popularity
     if (movieList.length === 0) {
       const pop = await fetchFromTMDB('movie/popular?page=1');
       if (pop?.results) movieList = (pop.results as TMDBMovie[]);
@@ -225,6 +225,28 @@ const EnhancedTrending = () => {
       const pop = await fetchFromTMDB('tv/popular?page=1');
       if (pop?.results) {
         const raw = (pop.results || []) as any[];
+        tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+      }
+    }
+    if (movieList.length === 0) {
+      const week = await fetchFromTMDB('trending/movie/week');
+      if (week?.results) movieList = (week.results as TMDBMovie[]);
+    }
+    if (tvList.length === 0) {
+      const week = await fetchFromTMDB('trending/tv/week');
+      if (week?.results) {
+        const raw = (week.results || []) as any[];
+        tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+      }
+    }
+    if (movieList.length === 0) {
+      const disc = await fetchFromTMDB('discover/movie?sort_by=popularity.desc&page=1');
+      if (disc?.results) movieList = (disc.results as TMDBMovie[]);
+    }
+    if (tvList.length === 0) {
+      const disc = await fetchFromTMDB('discover/tv?sort_by=popularity.desc&page=1');
+      if (disc?.results) {
+        const raw = (disc.results || []) as any[];
         tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
       }
     }
@@ -241,6 +263,20 @@ const EnhancedTrending = () => {
     } else {
       const ranked = rankCandidates(tvList, readHistory());
       setTvShows(ranked as TMDBMovie[]);
+    }
+
+    // Final guard: if still empty and no previous, try cached popular to avoid empty UI
+    if (movieList.length === 0 && movies.length === 0) {
+      const cached = readCached('movie/popular?page=1');
+      if (cached?.results) setMovies(rankCandidates((cached.results as TMDBMovie[]), readHistory()) as TMDBMovie[]);
+    }
+    if (tvList.length === 0 && tvShows.length === 0) {
+      const cached = readCached('tv/popular?page=1');
+      if (cached?.results) {
+        const raw = (cached.results || []) as any[];
+        const norm = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+        setTvShows(rankCandidates(norm, readHistory()) as TMDBMovie[]);
+      }
     }
 
     setLoading(false);
