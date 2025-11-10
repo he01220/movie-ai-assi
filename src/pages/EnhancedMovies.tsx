@@ -329,16 +329,11 @@ const EnhancedMovies = () => {
     if (!data && selectedGenre) {
       data = await fetchFromTMDB(`${contentType}/popular?page=${currentPage}`);
     }
-    // Cross-type fallback to movie popular to avoid empty UI
-    if (!data) {
-      data = await fetchFromTMDB(`movie/popular?page=${currentPage}`);
-    }
     // Fallback to cache if still failing
     if (!data) {
       const cached =
         readCached(endpoint) ||
-        (selectedGenre ? readCached(`${contentType}/popular?page=${currentPage}`) : null) ||
-        readCached(`movie/popular?page=${currentPage}`);
+        (selectedGenre ? readCached(`${contentType}/popular?page=${currentPage}`) : null);
       if (cached) data = cached;
     }
     
@@ -384,19 +379,10 @@ const EnhancedMovies = () => {
     if (!data) {
       data = await fetchFromTMDB(`${contentType}/popular?page=${currentPage}`);
     }
-    // Cross-type fallback to movie search/popular
-    if (!data) {
-      data = await fetchFromTMDB(`search/movie?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`);
-    }
-    if (!data) {
-      data = await fetchFromTMDB(`movie/popular?page=${currentPage}`);
-    }
     if (!data) {
       const cached =
         readCached(endpoint) ||
-        readCached(`${contentType}/popular?page=${currentPage}`) ||
-        readCached(`search/movie?query=${encodeURIComponent(queryOverride)}&page=${pageOverride}`) ||
-        readCached(`movie/popular?page=${currentPage}`);
+        readCached(`${contentType}/popular?page=${currentPage}`);
       if (cached) data = cached;
     }
     
