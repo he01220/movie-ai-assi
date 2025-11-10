@@ -82,7 +82,7 @@ const EnhancedMovies = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
-    fetchPopularMovies();
+    // Do not call fetchPopularMovies here to avoid duplicate initial fetch; handled by the debounced effect below
     if (user) {
       fetchUserPreferences();
     }
@@ -204,9 +204,30 @@ const EnhancedMovies = () => {
     };
   }, [genresRef.current]);
 
+  // Simple local cache for TMDB responses
+  const CACHE_KEY = 'tmdb_cache_v1';
+  const getCacheBucket = (): Record<string, { ts: number; data: any }> => {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch { return {}; }
+  };
+  const setCacheBucket = (bucket: Record<string, { ts: number; data: any }>) => {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(bucket)); } catch {}
+  };
+  const readCached = (endpoint: string, maxAgeMs = 30 * 60 * 1000) => {
+    const bucket = getCacheBucket();
+    const entry = bucket[endpoint];
+    if (!entry) return null;
+    if (Date.now() - entry.ts > maxAgeMs) return null;
+    return entry.data;
+  };
+  const writeCached = (endpoint: string, data: any) => {
+    const bucket = getCacheBucket();
+    bucket[endpoint] = { ts: Date.now(), data };
+    setCacheBucket(bucket);
+  };
+
   const fetchFromTMDB = async (endpoint: string, opts?: { retries?: number; timeoutMs?: number }) => {
-    const retries = opts?.retries ?? 2;
-    const timeoutMs = opts?.timeoutMs ?? 8000;
+    const retries = opts?.retries ?? 1;
+    const timeoutMs = opts?.timeoutMs ?? 6000;
     const invoke = () => supabase.functions.invoke('tmdb-movies', { body: { endpoint } });
 
     const withTimeout = <T,>(p: Promise<T>): Promise<T> => {
@@ -221,6 +242,7 @@ const EnhancedMovies = () => {
       try {
         const { data, error } = await withTimeout(invoke());
         if (error) throw error;
+        try { writeCached(endpoint, data); } catch {}
         return data as any;
       } catch (e) {
         lastErr = e;
@@ -239,10 +261,16 @@ const EnhancedMovies = () => {
       ? `discover/movie?with_genres=${genreOverride}&page=${pageOverride}&sort_by=popularity.desc`
       : `movie/popular?page=${pageOverride}`;
     
+    // Try live first
     let data = await fetchFromTMDB(endpoint);
     // Fallback to popular if discover by genre failed
     if (!data && selectedGenre) {
       data = await fetchFromTMDB(`movie/popular?page=${currentPage}`);
+    }
+    // Fallback to cache if still failing
+    if (!data) {
+      const cached = readCached(endpoint) || (selectedGenre ? readCached(`movie/popular?page=${currentPage}`) : null);
+      if (cached) data = cached;
     }
     
     if (data) {
@@ -272,6 +300,10 @@ const EnhancedMovies = () => {
     // Fallback to popular if search fails
     if (!data) {
       data = await fetchFromTMDB(`movie/popular?page=${currentPage}`);
+    }
+    if (!data) {
+      const cached = readCached(endpoint) || readCached(`movie/popular?page=${currentPage}`);
+      if (cached) data = cached;
     }
     
     if (data) {
