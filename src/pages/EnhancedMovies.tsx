@@ -679,6 +679,12 @@ const EnhancedMovies = () => {
     return genreIds.slice(0, 3).map(id => map[id]).filter(Boolean);
   };
 
+  const prefillFromCurrentByGenre = (genreId: number) => {
+    if (!Array.isArray(movies) || movies.length === 0) return;
+    const filtered = movies.filter(m => Array.isArray((m as any).genre_ids) && (m as any).genre_ids.includes(genreId));
+    if (filtered.length > 0) setMovies(filtered as TMDBMovie[]);
+  };
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const page = 1;
@@ -851,6 +857,7 @@ const EnhancedMovies = () => {
                         const page = 1;
                         setSelectedGenre(genreId);
                         setCurrentPage(page);
+                        prefillFromCurrentByGenre(genreId);
                         if (searchQuery.trim()) {
                           searchMovies(searchQuery, genreId, page);
                         } else {
