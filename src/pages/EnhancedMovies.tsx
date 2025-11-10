@@ -377,6 +377,12 @@ const EnhancedMovies = () => {
         setError('Working offline. Showing recent popular titles.');
         return;
       }
+      if (combined.length === 0) {
+        // Nothing from live or cache; show clear error instead of empty state
+        setLoading(false);
+        setError('Unable to load content from TMDB. Please try again later.');
+        return;
+      }
       const ranked = rankCandidates(combined, readHistory());
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(Math.max(movieData?.total_pages || 1, tvData?.total_pages || 1), 500));
@@ -488,6 +494,11 @@ const EnhancedMovies = () => {
         setTotalPages(Math.min(cachedMixSearch.total_pages || 1, 500));
         setLoading(false);
         setError('Working offline. Showing recent search snapshot.');
+        return;
+      }
+      if (results.length === 0) {
+        setLoading(false);
+        setError('No results found or service unavailable.');
         return;
       }
       const ranked = rankCandidates(results, readHistory());
