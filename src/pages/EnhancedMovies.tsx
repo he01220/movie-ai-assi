@@ -30,8 +30,29 @@ interface Genre {
   name: string;
 }
 
-// TV genres map (TMDB TV genre IDs)
-const GENRE_MAP: { [key: number]: string } = {
+// Movie and TV genre maps
+const MOVIE_GENRES: { [key: number]: string } = {
+  28: "Action",
+  12: "Adventure",
+  16: "Animation",
+  35: "Comedy",
+  80: "Crime",
+  99: "Documentary",
+  18: "Drama",
+  10751: "Family",
+  14: "Fantasy",
+  36: "History",
+  27: "Horror",
+  10402: "Music",
+  9648: "Mystery",
+  10749: "Romance",
+  878: "Science Fiction",
+  10770: "TV Movie",
+  53: "Thriller",
+  10752: "War",
+  37: "Western",
+};
+const TV_GENRES: { [key: number]: string } = {
   10759: "Action & Adventure",
   16: "Animation",
   35: "Comedy",
@@ -47,7 +68,7 @@ const GENRE_MAP: { [key: number]: string } = {
   10766: "Soap",
   10767: "Talk",
   10768: "War & Politics",
-  37: "Western"
+  37: "Western",
 };
 
 const EnhancedMovies = () => {
@@ -65,8 +86,8 @@ const EnhancedMovies = () => {
   const [videoKey, setVideoKey] = useState<string | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
-  // Content category locked to TV as requested
-  const [contentType] = useState<'movie' | 'tv'>('tv');
+  // Content category selector
+  const [contentType, setContentType] = useState<'movie' | 'tv'>('movie');
   // Ratings: per-user and aggregated per content
   const [userRatings, setUserRatings] = useState<Record<number, number>>({});
   const [avgRatings, setAvgRatings] = useState<Record<number, { avg: number; count: number }>>({});
@@ -326,7 +347,7 @@ const EnhancedMovies = () => {
       const ranked = rankCandidates(results, readHistory());
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(data.total_pages || 1, 500)); // Limit to 500 pages
-      try { await fetchRatingsFor((ranked as TMDBMovie[]).map(m => m.id)); } catch {}
+      if (contentType === 'tv') { try { await fetchRatingsFor((ranked as TMDBMovie[]).map(m => m.id)); } catch {} }
     } else {
       // Only show error if we have nothing to show
       if (movies.length === 0) {
@@ -356,7 +377,7 @@ const EnhancedMovies = () => {
       const ranked = rankCandidates(results, readHistory());
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(cachedPrefill.total_pages || 1, 500));
-      try { await fetchRatingsFor((ranked as TMDBMovie[]).map(m => m.id)); } catch {}
+      if (contentType === 'tv') { try { await fetchRatingsFor((ranked as TMDBMovie[]).map(m => m.id)); } catch {} }
     }
     let data = await fetchFromTMDB(endpoint);
     // Fallback to popular if search fails
@@ -388,7 +409,7 @@ const EnhancedMovies = () => {
       const ranked = rankCandidates(results, readHistory());
       setMovies(ranked as TMDBMovie[]);
       setTotalPages(Math.min(data.total_pages || 1, 500));
-      try { await fetchRatingsFor((ranked as TMDBMovie[]).map(m => m.id)); } catch {}
+      if (contentType === 'tv') { try { await fetchRatingsFor((ranked as TMDBMovie[]).map(m => m.id)); } catch {} }
     } else {
       if (movies.length === 0) {
         setError('Unable to load search results. Please try again.');
@@ -523,7 +544,8 @@ const EnhancedMovies = () => {
   };
 
   const getMovieGenres = (genreIds: number[]) => {
-    return genreIds.slice(0, 3).map(id => GENRE_MAP[id]).filter(Boolean);
+    const map = contentType === 'tv' ? TV_GENRES : MOVIE_GENRES;
+    return genreIds.slice(0, 3).map(id => map[id]).filter(Boolean);
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -626,9 +648,26 @@ const EnhancedMovies = () => {
           </Button>
         </form>
 
-        {/* Genre Filter (Sticky) - TV only */}
+        {/* Category + Genre Filter (Sticky) */}
         <div className="sticky top-16 z-10 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b overflow-hidden">
           <div className="relative overflow-hidden">
+            {/* Category toggle */}
+            <div className="flex gap-2 px-4 pt-3">
+              <Button
+                variant={contentType === 'movie' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => { if (contentType !== 'movie') { setContentType('movie'); setCurrentPage(1); setSelectedGenre(null); } }}
+              >
+                Movies
+              </Button>
+              <Button
+                variant={contentType === 'tv' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => { if (contentType !== 'tv') { setContentType('tv'); setCurrentPage(1); setSelectedGenre(null); } }}
+              >
+                TV
+              </Button>
+            </div>
             {/* Scrollable genres row (directly scrollable element) */}
             <div
               id="genres"
@@ -670,7 +709,7 @@ const EnhancedMovies = () => {
                 >
                   All Genres
                 </Button>
-                {Object.entries(GENRE_MAP).map(([id, name]) => (
+                {Object.entries(contentType === 'tv' ? TV_GENRES : MOVIE_GENRES).map(([id, name]) => (
                   <Button
                     key={id}
                     variant={selectedGenre === parseInt(id) ? "default" : "outline"}
@@ -808,33 +847,34 @@ const EnhancedMovies = () => {
                   {movie.overview}
                 </p>
 
-                {/* User Ratings (interactive) */}
-                <div className="mb-4">
-                  <div className="flex items-center gap-1">
-                    {([1,2,3,4,5] as const).map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        aria-label={`Rate ${n} star${n>1?'s':''}`}
-                        onClick={() => setRating(movie.id, n)}
-                        className="p-0.5"
-                        title={`Rate ${n}`}
-                      >
-                        <Star
-                          size={16}
-                          className={
-                            (userRatings[movie.id] ?? 0) >= n
-                              ? 'fill-yellow-500 text-yellow-500'
-                              : 'text-muted-foreground'
-                          }
-                        />
-                      </button>
-                    ))}
-                    <span className="text-xs text-muted-foreground ml-2">
-                      {avgRatings[movie.id]?.avg ? `${avgRatings[movie.id].avg.toFixed(1)} (${avgRatings[movie.id].count})` : 'No ratings yet'}
-                    </span>
+                {contentType === 'tv' && (
+                  <div className="mb-4">
+                    <div className="flex items-center gap-1">
+                      {([1,2,3,4,5] as const).map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          aria-label={`Rate ${n} star${n>1?'s':''}`}
+                          onClick={() => setRating(movie.id, n)}
+                          className="p-0.5"
+                          title={`Rate ${n}`}
+                        >
+                          <Star
+                            size={16}
+                            className={
+                              (userRatings[movie.id] ?? 0) >= n
+                                ? 'fill-yellow-500 text-yellow-500'
+                                : 'text-muted-foreground'
+                            }
+                          />
+                        </button>
+                      ))}
+                      <span className="text-xs text-muted-foreground ml-2">
+                        {avgRatings[movie.id]?.avg ? `${avgRatings[movie.id].avg.toFixed(1)} (${avgRatings[movie.id].count})` : 'No ratings yet'}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {contentType === 'movie' ? (
                   <Button 
