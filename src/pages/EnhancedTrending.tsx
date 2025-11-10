@@ -96,12 +96,24 @@ const EnhancedTrending = () => {
       const endpoint = genreParam
         ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
         : `movie/popular?page=${recoPage}`;
+      // Prefill from cache for instant recommendations
+      const cached = readCached(endpoint);
+      if (cached?.results && (recoMovies.length === 0)) {
+        const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
+        setRecoMovies((ranked as TMDBMovie[]).slice(0, desired));
+      }
       const data = await fetchFromTMDB(endpoint);
-      if (data && data.results) {
-        const ranked = rankCandidates((data.results as TMDBMovie[]), readHistory());
-        setRecoMovies((ranked as TMDBMovie[]).slice(0, recoCount));
+      let list: TMDBMovie[] = [];
+      if (data?.results) {
+        list = (data.results as TMDBMovie[]);
       } else {
-        setRecoMovies([]);
+        // Fallback to popular if discover failed
+        const pop = await fetchFromTMDB(`movie/popular?page=${recoPage}`);
+        if (pop?.results) list = (pop.results as TMDBMovie[]);
+      }
+      if (list.length > 0) {
+        const ranked = rankCandidates(list, readHistory());
+        setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
       }
     })();
   }, [period, user, recoPage, recoCount]);
@@ -118,9 +130,20 @@ const EnhancedTrending = () => {
       const endpoint = genreParam
         ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
         : `movie/popular?page=${recoPage}`;
+      const cached = readCached(endpoint);
+      if (cached?.results) {
+        const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
+        setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
+      }
       const data = await fetchFromTMDB(endpoint);
-      if (data && data.results) {
-        const ranked = rankCandidates((data.results as TMDBMovie[]), readHistory());
+      let list: TMDBMovie[] = [];
+      if (data?.results) list = (data.results as TMDBMovie[]);
+      if (list.length === 0) {
+        const pop = await fetchFromTMDB(`movie/popular?page=${recoPage}`);
+        if (pop?.results) list = (pop.results as TMDBMovie[]);
+      }
+      if (list.length > 0) {
+        const ranked = rankCandidates(list, readHistory());
         setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
       }
     };
