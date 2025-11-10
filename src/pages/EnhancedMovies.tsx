@@ -86,8 +86,8 @@ const EnhancedMovies = () => {
   const [videoKey, setVideoKey] = useState<string | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
-  // Content category selector
-  const [contentType, setContentType] = useState<'movie' | 'tv'>('movie');
+  // Content category selector: user must pick first
+  const [contentType, setContentType] = useState<'movie' | 'tv' | null>(null);
   // Ratings: per-user and aggregated per content
   const [userRatings, setUserRatings] = useState<Record<number, number>>({});
   const [avgRatings, setAvgRatings] = useState<Record<number, { avg: number; count: number }>>({});
@@ -149,6 +149,7 @@ const EnhancedMovies = () => {
 
   useEffect(() => {
     const t = setTimeout(() => {
+      if (!contentType) return;
       if (searchQuery) {
         searchMovies();
       } else {
@@ -309,6 +310,7 @@ const EnhancedMovies = () => {
   };
 
   const fetchPopularMovies = async (genreOverride: number | null = selectedGenre, pageOverride: number = currentPage) => {
+    if (!contentType) return;
     setLoading(true);
     setError(null);
     setLastAction("popular");
@@ -358,6 +360,7 @@ const EnhancedMovies = () => {
     genreOverride: number | null = selectedGenre,
     pageOverride: number = currentPage
   ) => {
+    if (!contentType) return;
     if (!queryOverride.trim()) return;
     
     setLoading(true);
@@ -530,7 +533,7 @@ const EnhancedMovies = () => {
   };
 
   const getMovieGenres = (genreIds: number[]) => {
-    const map = contentType === 'tv' ? TV_GENRES : MOVIE_GENRES;
+    const map = contentType === 'tv' ? TV_GENRES : contentType === 'movie' ? MOVIE_GENRES : {} as Record<number,string>;
     return genreIds.slice(0, 3).map(id => map[id]).filter(Boolean);
   };
 
