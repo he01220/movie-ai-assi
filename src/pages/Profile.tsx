@@ -250,8 +250,7 @@ const Profile = () => {
   // Handle logout
   const handleLogout = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      await signOut(); // Use signOut from useAuth
       
       // Clear any local state if needed
       setProfile(null);
@@ -272,6 +271,21 @@ const Profile = () => {
         description: "Не удалось выйти из аккаунта: " + (error instanceof Error ? error.message : 'Неизвестная ошибка'),
         variant: "destructive",
       });
+    }
+  };
+
+  // Toggle edit mode
+  const toggleEditMode = () => {
+    if (editing) {
+      // If already in edit mode, cancel and reset to original values
+      setEditDisplayName(profile?.display_name || '');
+      setEditBio(profile?.bio || '');
+      setEditing(false);
+    } else {
+      // Enter edit mode with current values
+      setEditDisplayName(profile?.display_name || '');
+      setEditBio(profile?.bio || '');
+      setEditing(true);
     }
   };
 
@@ -321,7 +335,7 @@ const Profile = () => {
                 </AvatarFallback>
               </Avatar>
               <button 
-                onClick={() => setEditing(true)}
+                onClick={toggleEditMode}
                 className="absolute -bottom-2 -right-2 bg-primary text-primary-foreground p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <Edit className="h-4 w-4" />
@@ -337,9 +351,9 @@ const Profile = () => {
                   <p className="text-muted-foreground">@{profile?.username || 'user'}</p>
                 </div>
                 <div className="flex gap-2 justify-center sm:justify-start">
-                  <Button variant="outline" onClick={() => setEditing(true)}>
+                  <Button variant="outline" onClick={toggleEditMode}>
                     <Edit className="mr-2 h-4 w-4" />
-                    Редактировать
+                    {editing ? 'Отменить' : 'Редактировать'}
                   </Button>
                   <Button variant="outline" onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
@@ -348,10 +362,46 @@ const Profile = () => {
                 </div>
               </div>
               
-              {profile?.bio && (
-                <p className="mt-4 text-muted-foreground">
-                  {profile.bio}
-                </p>
+              {editing ? (
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <label htmlFor="displayName" className="block text-sm font-medium text-muted-foreground mb-1">
+                      Имя
+                    </label>
+                    <Input
+                      id="displayName"
+                      value={editDisplayName}
+                      onChange={(e) => setEditDisplayName(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="bio" className="block text-sm font-medium text-muted-foreground mb-1">
+                      О себе
+                    </label>
+                    <Textarea
+                      id="bio"
+                      value={editBio}
+                      onChange={(e) => setEditBio(e.target.value)}
+                      className="w-full min-h-[100px]"
+                      placeholder="Расскажите о себе..."
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" onClick={toggleEditMode}>
+                      Отмена
+                    </Button>
+                    <Button onClick={saveProfileChanges}>
+                      Сохранить изменения
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                profile?.bio && (
+                  <p className="mt-4 text-muted-foreground">
+                    {profile.bio}
+                  </p>
+                )
               )}
               
               <div className="mt-6 flex flex-wrap gap-4 justify-center sm:justify-start">
