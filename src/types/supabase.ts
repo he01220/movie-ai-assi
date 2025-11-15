@@ -32,6 +32,81 @@ type CustomTables = {
       created_at?: string
     }
   }
+  
+  trailer_plays: {
+    Row: {
+      id: string
+      user_id: string
+      movie_id: number
+      movie_title: string
+      created_at: string
+      updated_at: string
+    }
+    Insert: {
+      id?: string
+      user_id: string
+      movie_id: number
+      movie_title: string
+      created_at?: string
+      updated_at?: string
+    }
+    Update: {
+      id?: string
+      user_id?: string
+      movie_id?: number
+      movie_title?: string
+      created_at?: string
+      updated_at?: string
+    }
+  }
+  
+  search_logs: {
+    Row: {
+      id: string
+      user_id: string
+      query: string
+      result_count: number
+      searched_at: string
+    }
+    Insert: {
+      id?: string
+      user_id: string
+      query: string
+      result_count: number
+      searched_at?: string
+    }
+    Update: {
+      id?: string
+      user_id?: string
+      query?: string
+      result_count?: number
+      searched_at?: string
+    }
+  }
+  
+  movie_opens: {
+    Row: {
+      id: string
+      user_id: string
+      movie_id: number
+      movie_title: string
+      opened_at: string
+    }
+    Insert: {
+      id?: string
+      user_id: string
+      movie_id: number
+      movie_title: string
+      opened_at?: string
+    }
+    Update: {
+      id?: string
+      user_id?: string
+      movie_id?: number
+      movie_title?: string
+      opened_at?: string
+    }
+  }
   user_ratings: {
     Row: {
       id: string

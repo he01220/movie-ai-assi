@@ -198,23 +198,26 @@ const Profile = () => {
     if (!user || !profile) return;
 
     try {
+      const updates = {
+        id: user.id,
+        display_name: editDisplayName.trim(),
+        bio: editBio.trim(),
+        updated_at: new Date().toISOString()
+      };
+
       const { error } = await supabase
         .from('profiles')
-        .update({
-          display_name: editDisplayName,
-          bio: editBio,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
+        .upsert(updates, { onConflict: 'id' });
 
       if (error) throw error;
 
       // Update local state
-      setProfile(prev => prev ? {
-        ...prev,
-        display_name: editDisplayName,
-        bio: editBio
-      } : null);
+      setProfile(prev => ({
+        ...prev!,
+        display_name: updates.display_name,
+        bio: updates.bio,
+        updated_at: updates.updated_at
+      }));
       
       setEditing(false);
       
@@ -227,6 +230,21 @@ const Profile = () => {
       toast({
         title: "Ошибка",
         description: "Не удалось обновить профиль",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      navigate('/auth');
+    } catch (error) {
+      console.error('Error signing out:', error);
+      toast({
+        title: "Ошибка",
+        description: "Не удалось выйти из аккаунта",
         variant: "destructive",
       });
     }
@@ -298,7 +316,7 @@ const Profile = () => {
                     <Edit className="mr-2 h-4 w-4" />
                     Редактировать
                   </Button>
-                  <Button variant="outline" onClick={signOut}>
+                  <Button variant="outline" onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     Выйти
                   </Button>
@@ -315,7 +333,7 @@ const Profile = () => {
                 <div className="flex items-center gap-2">
                   <Calendar className="h-5 w-5 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">
-                    На сайте с {new Date(profile?.created_at || '').toLocaleDateString('ru-RU')}
+                    На сайте с {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('ru-RU') : 'недавно'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -375,7 +393,7 @@ const Profile = () => {
                             </h3>
                             {movie.release_date && (
                               <p className="text-sm text-muted-foreground">
-                                {new Date(movie.release_date).getFullYear()}
+                                {movie.release_date ? new Date(movie.release_date).getFullYear() : 'Год не указан'}
                               </p>
                             )}
                           </div>
