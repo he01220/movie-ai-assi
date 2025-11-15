@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Heart, Plus, Share, Star } from 'lucide-react';
+import { ArrowLeft, Heart, Plus, Share, Star, X, Play } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -43,6 +44,12 @@ const MovieDetails = () => {
   const [inWatchlist, setInWatchlist] = useState(false);
   const [reco, setReco] = useState<Movie[]>([]);
   const [showTrailer, setShowTrailer] = useState(false);
+  const [youtubeResults, setYoutubeResults] = useState<Array<{
+    id: { videoId: string };
+    snippet: { title: string; thumbnails: { high: { url: string } } };
+  }> | null>(null);
+  const [loadingYoutube, setLoadingYoutube] = useState(false);
+  const [currentTrailer, setCurrentTrailer] = useState<{key: string; type: string} | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -53,11 +60,45 @@ const MovieDetails = () => {
     }
   }, [id, user]);
 
+  const searchYoutubeVideos = async (query: string) => {
+    try {
+      setLoadingYoutube(true);
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&key=YOUR_YOUTUBE_API_KEY&maxResults=5`
+      );
+      const data = await response.json();
+      return data.items || [];
+    } catch (error) {
+      console.error('Error searching YouTube:', error);
+      return [];
+    } finally {
+      setLoadingYoutube(false);
+    }
+  };
+
   const fetchMovieDetails = async () => {
     try {
       const { data, error } = await supabase.functions.invoke('tmdb-movies', {
         body: { endpoint: `movie/${id}?append_to_response=videos` }
       });
+
+      // If no videos from TMDB, try to find on YouTube
+      if (data && (!data.videos || data.videos.results.length === 0)) {
+        const query = `${data.title} ${data.release_date ? data.release_date.split('-')[0] : ''} official trailer`;
+        const youtubeVideos = await searchYoutubeVideos(query);
+        if (youtubeVideos.length > 0) {
+          // Convert YouTube results to match our video format
+          data.videos = {
+            results: youtubeVideos.map((item: any) => ({
+              key: item.id.videoId,
+              type: 'YouTube',
+              site: 'YouTube',
+              name: item.snippet.title,
+              thumbnail: item.snippet.thumbnails.high.url
+            }))
+          };
+        }
+      }
 
       if (error) throw error;
       setMovie(data);
@@ -188,7 +229,7 @@ const MovieDetails = () => {
   const handleTrailerClick = (key: string, type: string) => {
     try {
       logTrailerPlay(movie?.id || 0, movie?.title || '');
-      window.open(`https://www.youtube.com/watch?v=${key}`, '_blank');
+      setCurrentTrailer({ key, type });
     } catch (error) {
       console.error('Error playing trailer:', error);
       toast({
@@ -249,6 +290,28 @@ const MovieDetails = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Trailer Modal */}
+      <Dialog open={!!currentTrailer} onOpenChange={(open) => !open && setCurrentTrailer(null)}>
+        <DialogContent className="max-w-4xl p-0 bg-transparent border-0 overflow-hidden">
+          <div className="relative pt-[56.25%] w-full">
+            <button 
+              onClick={() => setCurrentTrailer(null)}
+              className="absolute -top-10 right-0 z-50 text-white hover:text-gray-300 transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            {currentTrailer && (
+              <iframe
+                src={`https://www.youtube.com/embed/${currentTrailer.key}?autoplay=1&mute=0`}
+                className="absolute top-0 left-0 w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title="Movie Trailer"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center gap-4 mb-6">
           <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
@@ -259,38 +322,78 @@ const MovieDetails = () => {
         
         {/* Trailer Section */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold mb-4">Трейлеры и видео</h2>
-          {movie.videos?.results && movie.videos.results.length > 0 ? (
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Трейлеры и видео</h2>
+            {(!movie.videos?.results || movie.videos.results.length === 0) && !loadingYoutube && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={async () => {
+                  const query = `${movie.title} ${movie.release_date ? movie.release_date.split('-')[0] : ''} official trailer`;
+                  setLoadingYoutube(true);
+                  const results = await searchYoutubeVideos(query);
+                  setYoutubeResults(results);
+                }}
+                disabled={loadingYoutube}
+              >
+                {loadingYoutube ? 'Поиск...' : 'Найти трейлеры'}
+              </Button>
+            )}
+          </div>
+          
+          {(movie.videos?.results && movie.videos.results.length > 0) || (youtubeResults && youtubeResults.length > 0) ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {movie.videos.results
-                .filter(video => video.site === 'YouTube' && (video.type === 'Trailer' || video.type === 'Teaser' || video.type === 'Clip'))
-                .sort((a, b) => {
-                  // Sort trailers first, then teasers, then clips
-                  if (a.type === 'Trailer' && b.type !== 'Trailer') return -1;
-                  if (a.type !== 'Trailer' && b.type === 'Trailer') return 1;
-                  if (a.type === 'Teaser' && b.type === 'Clip') return -1;
-                  return 0;
+              {((youtubeResults && youtubeResults.length > 0) ? youtubeResults.map((item: any) => ({
+                key: item.id.videoId,
+                type: 'YouTube',
+                site: 'YouTube',
+                name: item.snippet.title,
+                thumbnail: item.snippet.thumbnails.high.url
+              })) : (movie.videos?.results || []))
+                .filter((video: any) => video.site === 'YouTube' && 
+                  (video.type === 'Trailer' || 
+                   video.type === 'Teaser' || 
+                   video.type === 'Clip' ||
+                   video.type === 'YouTube'))
+                .sort((a: any, b: any) => {
+                  // Sort trailers first, then teasers, then clips, then other YouTube videos
+                  const typeOrder: Record<string, number> = {
+                    'Trailer': 0,
+                    'Teaser': 1,
+                    'Clip': 2,
+                    'YouTube': 3
+                  };
+                  return (typeOrder[a.type] || 4) - (typeOrder[b.type] || 4);
                 })
-                .map((video) => (
+                .map((video: any) => (
                   <div 
                     key={video.key} 
                     className="relative cursor-pointer group"
                     onClick={() => handleTrailerClick(video.key, video.type)}
                   >
-                    <div className="aspect-video bg-muted rounded-lg overflow-hidden relative">
-                      <img 
-                        src={`https://img.youtube.com/vi/${video.key}/hqdefault.jpg`} 
-                        alt={video.name}
-                        className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = '/placeholder.svg';
-                        }}
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center opacity-90 group-hover:opacity-100 transition-opacity">
-                          <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M8 5v14l11-7z" />
-                          </svg>
+                    <div className="aspect-video bg-muted rounded-lg overflow-hidden relative group">
+                      <div className="relative w-full h-full">
+                        <img 
+                          src={video.thumbnail || `https://img.youtube.com/vi/${video.key}/hqdefault.jpg`} 
+                          alt={video.name}
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = '/placeholder.svg';
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-colors"></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center opacity-90 group-hover:opacity-100 transition-all transform group-hover:scale-110">
+                            <Play className="w-6 h-6 text-white ml-1" fill="currentColor" />
+                          </div>
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
+                          <p className="text-white text-sm font-medium truncate">{video.name}</p>
+                          <p className="text-white/80 text-xs">
+                            {video.type === 'Trailer' ? 'Трейлер' : 
+                             video.type === 'Teaser' ? 'Тизер' : 
+                             video.type === 'Clip' ? 'Клип' : 'Видео'}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -306,17 +409,33 @@ const MovieDetails = () => {
           ) : (
             <div className="bg-muted/50 p-6 rounded-lg text-center">
               <p className="text-muted-foreground">К сожалению, трейлеры для этого фильма пока недоступны.</p>
-              <p className="text-sm text-muted-foreground mt-2">Попробуйте посмотреть другие видео о фильме на YouTube.</p>
-              <Button 
-                variant="outline" 
-                className="mt-4"
-                onClick={() => {
-                  const searchQuery = encodeURIComponent(`${movie.title} ${movie.release_date ? movie.release_date.split('-')[0] : ''} official trailer`);
-                  window.open(`https://www.youtube.com/results?search_query=${searchQuery}`, '_blank');
-                }}
-              >
-                Искать на YouTube
-              </Button>
+              <p className="text-sm text-muted-foreground mt-2 mb-4">Вы можете попробовать найти трейлер вручную или нажать кнопку ниже для поиска.</p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button 
+                  variant="outline" 
+                  onClick={async () => {
+                    const query = `${movie.title} ${movie.release_date ? movie.release_date.split('-')[0] : ''} official trailer`;
+                    setLoadingYoutube(true);
+                    const results = await searchYoutubeVideos(query);
+                    setYoutubeResults(results);
+                  }}
+                  disabled={loadingYoutube}
+                >
+                  {loadingYoutube ? 'Ищем трейлеры...' : 'Найти трейлеры'}
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    const searchQuery = encodeURIComponent(`${movie.title} ${movie.release_date ? movie.release_date.split('-')[0] : ''} official trailer`);
+                    window.open(`https://www.youtube.com/results?search_query=${searchQuery}`, '_blank');
+                  }}
+                >
+                  Открыть YouTube
+                </Button>
+              </div>
+              {youtubeResults && youtubeResults.length === 0 && (
+                <p className="text-sm text-muted-foreground mt-4">Не удалось найти трейлеры. Попробуйте поискать вручную.</p>
+              )}
             </div>
           )}
         </div>
