@@ -210,14 +210,14 @@ const EnhancedTrending = () => {
     try {
       // Fetch movies
       const moviesResponse = await fetch(
-        `https://api.themoviedb.org/3/trending/movie/${period}?api_key=${process.env.REACT_APP_TMDB_API_KEY}`
+        `https://api.themoviedb.org/3/trending/movie/${period}?api_key=${import.meta.env.VITE_TMDB_API_KEY}`
       );
       const moviesData = await moviesResponse.json();
       setMovies(moviesData.results || []);
 
       // Fetch TV shows
       const tvResponse = await fetch(
-        `https://api.themoviedb.org/3/trending/tv/${period}?api_key=${process.env.REACT_APP_TMDB_API_KEY}`
+        `https://api.themoviedb.org/3/trending/tv/${period}?api_key=${import.meta.env.VITE_TMDB_API_KEY}`
       );
       const tvData = await tvResponse.json();
       setTvShows(tvData.results || []);
@@ -452,32 +452,21 @@ const EnhancedTrending = () => {
     const logActivity = async () => {
       if (!user?.id) return;
       
-      const activityData = {
-        user_id: user.id,
-        content_id: movie.id.toString(),
-        type: 'movie_play',
-        is_read: false,
-        message: `Played ${movie.title || movie.name || 'content'}`,
-        title: 'Content Played',
-        data: { 
-          activity_type: 'movie_play',
-          content_type: movie.media_type || 'movie',
-          title: movie.title || movie.name || '',
-          poster_path: movie.poster_path || ''
-        },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      
       try {
-        await supabase
-          .from('notifications')
-          .insert([activityData] as any);
+        // Log the movie watch in watch_history
+        const { error } = await (supabase as any)
+          .from('watch_history')
+          .insert([{
+            user_id: user.id,
+            movie_id: movie.id,
+            watched_at: new Date().toISOString()
+          }]);
         
-        // Update recommendations after logging activity
-        if (fetchRecommendations) {
-          fetchRecommendations();
-        }
+        if (error) throw error;
+        
+        // Refresh user history and recommendations
+        await fetchUserHistory();
+        await fetchRecommendations();
       } catch (dbError: any) {
         console.error('Error logging activity:', dbError);
         setError(dbError.message);
