@@ -3,8 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Star, Calendar, Heart, Bookmark, Play, Globe, ArrowUp, List, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Star, Calendar, Heart, Bookmark, Play, Globe, ArrowUp, List, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -86,6 +87,8 @@ const EnhancedMovies = () => {
   const [videoKey, setVideoKey] = useState<string | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const [isLoadingTrailer, setIsLoadingTrailer] = useState(false);
   // Content category selector: user must pick first
   const [contentType, setContentType] = useState<'movie' | 'tv' | null>(null);
   // Ratings: per-user and aggregated per content
@@ -729,30 +732,37 @@ const EnhancedMovies = () => {
     searchMovies(searchQuery, selectedGenre, page);
   };
 
-  const handlePlayMovie = async (movieId: number, movieTitle: string) => {
+  const handlePlayMovie = async (id: number, title: string) => {
     try {
-      const genres = movies.find(m => m.id === movieId)?.genre_ids;
-      logTrailerPlay(movieId, movieTitle, genres);
-    } catch {}
-    setSelectedMovie({ title: movieTitle, id: movieId });
-    
-    // Fetch trailer from TMDB
-    const data = await fetchFromTMDB(`${contentType}/${movieId}/videos`);
-    
-    if (data && data.results && data.results.length > 0) {
-      // Find official trailer or teaser
-      const trailer = data.results.find((video: any) => 
-        video.type === "Trailer" && video.site === "YouTube"
-      ) || data.results.find((video: any) => 
-        video.type === "Teaser" && video.site === "YouTube"
-      ) || data.results[0];
-      
-      setVideoKey(trailer?.key || null);
-    } else {
-      setVideoKey(null);
+      setIsLoadingTrailer(true);
+      // First try to get the trailer from TMDB
+      const { data } = await supabase.functions.invoke('tmdb-movies', {
+        body: { 
+          endpoint: `${contentType || 'movie'}/${id}/videos`
+        }
+      });
+
+      // Find the first available trailer
+      const trailer = data?.results?.find((v: any) => 
+        v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')
+      );
+
+      if (trailer) {
+        setTrailerKey(trailer.key);
+        setIsPlayerOpen(true);
+      } else {
+        // If no trailer found, try to search on YouTube directly
+        const searchQuery = `${title} ${contentType === 'tv' ? 'TV Show' : 'Movie'} Official Trailer`;
+        window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`, '_blank');
+      }
+    } catch (error) {
+      console.error('Error fetching trailer:', error);
+      // Fallback to YouTube search
+      const searchQuery = `${title} ${contentType === 'tv' ? 'TV Show' : 'Movie'} Official Trailer`;
+      window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`, '_blank');
+    } finally {
+      setIsLoadingTrailer(false);
     }
-    
-    setIsPlayerOpen(true);
   };
 
   if (loading && movies.length === 0) {
@@ -966,10 +976,18 @@ const EnhancedMovies = () => {
                     <Button 
                       size="icon" 
                       variant="secondary"
-                      onClick={() => handlePlayMovie(movie.id, movie.title)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePlayMovie(movie.id, movie.title);
+                      }}
                       title="Play Trailer"
+                      disabled={isLoadingTrailer}
                     >
-                      <Play size={16} />
+                      {isLoadingTrailer && selectedMovie?.id === movie.id ? (
+                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                      ) : (
+                        <Play size={16} />
+                      )}
                     </Button>
                     <Button
                       size="icon"
@@ -1121,16 +1139,35 @@ const EnhancedMovies = () => {
       )}
 
       {/* Video Player Modal */}
-      <VideoPlayerModal
-        isOpen={isPlayerOpen}
-        onClose={() => {
-          setIsPlayerOpen(false);
-          setSelectedMovie(null);
-          setVideoKey(null);
-        }}
-        movieTitle={selectedMovie?.title || ""}
-        videoKey={videoKey}
-      />
+      <Dialog open={isPlayerOpen} onOpenChange={setIsPlayerOpen}>
+        <DialogContent className="max-w-4xl p-0 bg-transparent border-0 overflow-hidden">
+          <div className="relative pt-[56.25%] w-full">
+            <button 
+              onClick={() => setIsPlayerOpen(false)}
+              className="absolute -top-10 right-0 z-50 text-white hover:text-gray-300 transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            {isLoadingTrailer ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
+              </div>
+            ) : trailerKey ? (
+              <iframe
+                src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=0`}
+                className="absolute top-0 left-0 w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title={selectedMovie?.title || 'Movie Trailer'}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
+                <p>No trailer available</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
