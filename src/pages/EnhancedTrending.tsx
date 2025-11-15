@@ -491,10 +491,12 @@ const EnhancedTrending = () => {
 
   // Определяем, что показывать в зависимости от состояния
   const renderContent = () => {
+    // Если загрузка и нет данных
     if (loading && movies.length === 0 && tvShows.length === 0) {
       return renderStatusMessage('Загрузка рекомендаций...', <Clock className="h-12 w-12 mx-auto animate-spin" />);
     }
     
+    // Если оффлайн и нет кэшированных данных
     if (isOffline && movies.length === 0 && tvShows.length === 0) {
       return renderStatusMessage(
         'Нет кэшированных данных. Пожалуйста, подключитесь к интернету для загрузки контента.',
@@ -502,22 +504,29 @@ const EnhancedTrending = () => {
       );
     }
     
-    // Return null to render the main content below
-    return null;
+    // В остальных случаях показываем основной контент
+    return (
+      <>
+        {isOffline && (
+          <div className="mb-4 p-3 bg-yellow-100 text-yellow-800 rounded-md text-sm flex items-center gap-2">
+            <WifiOff className="h-4 w-4" />
+            <span>Вы в оффлайн-режиме. Показываем кэшированные данные.</span>
+          </div>
+        )}
+        {/* Остальной контент будет здесь */}
+      </>
+    );
   };
 
-  // Render loading or offline message if needed
-  const statusMessage = renderContent();
-  
+  // Получаем контент для отображения
+  const content = renderContent();
+
   // Render the main content
-  if (statusMessage) {
-    return (
-      <div className="container mx-auto px-4 py-8 mb-24">
-        {statusMessage}
-      </div>
-    );
+  if (content) {
+    return <div className="container mx-auto px-4 py-8 mb-24">{content}</div>;
   }
 
+  // Main content when not showing loading/offline messages
   return (
     <div className="container mx-auto px-4 py-8 mb-24">
       {isOffline && (
@@ -814,15 +823,15 @@ const EnhancedTrending = () => {
             {[...movies].sort((a, b) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime())[0]?.title || 'Loading...'}
           </p>
         </Card>
-          </div>
+      </div>
 
-          {/* Video Player Modal */}
-          <VideoPlayerModal
+      {/* Video Player Modal */}
+      <VideoPlayerModal
         isOpen={isPlayerOpen}
         onClose={() => setIsPlayerOpen(false)}
         videoKey={videoKey}
         movieTitle={selectedMovie?.title || 'Video'}
-          />
+      />
     </div>
   );
 };
