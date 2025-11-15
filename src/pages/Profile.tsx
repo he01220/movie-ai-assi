@@ -202,6 +202,9 @@ const Profile = () => {
       const displayName = editDisplayName.trim();
       const username = editUsername.trim().toLowerCase();
       const bio = editBio.trim();
+      
+      // Set language to Russian
+      const language = 'ru-RU';
 
       if (!displayName) {
         toast({
@@ -245,6 +248,8 @@ const Profile = () => {
         username: username,
         display_name: displayName,
         bio: bio,
+        language: language,
+        preferred_language: language,
         updated_at: new Date().toISOString()
       };
 
@@ -330,6 +335,9 @@ const Profile = () => {
       return;
     }
     
+    // Set document language to Russian
+    document.documentElement.lang = 'ru';
+    
     fetchUserProfile();
     fetchWatchlist();
   }, [user, navigate, fetchUserProfile, fetchWatchlist]);
@@ -376,16 +384,12 @@ const Profile = () => {
               </button>
             </div>
             
-            <div className="flex-1 text-center sm:text-left">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
+            <div className="flex-1 flex flex-col h-full">
+              <div className="flex-1 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                <div className="text-center sm:text-left">
                   <h1 className="text-3xl font-bold tracking-tight">
                     {profile?.display_name}
                   </h1>
-                  <div className="flex items-center gap-1">
-                    <span className="text-muted-foreground">@</span>
-                    <span className="text-muted-foreground">{profile?.username || 'user'}</span>
-                  </div>
                 </div>
                 <div className="flex gap-2 justify-center sm:justify-start">
                   <Button variant="outline" onClick={toggleEditMode}>
@@ -396,6 +400,12 @@ const Profile = () => {
                     <LogOut className="mr-2 h-4 w-4" />
                     Выйти
                   </Button>
+                </div>
+              </div>
+              <div className="flex justify-center mt-2">
+                <div className="flex items-center gap-1 bg-muted/50 px-3 py-1 rounded-full">
+                  <span className="text-muted-foreground">@</span>
+                  <span className="text-muted-foreground font-medium">{profile?.username || 'user'}</span>
                 </div>
               </div>
               
