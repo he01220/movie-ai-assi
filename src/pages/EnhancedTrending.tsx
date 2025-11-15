@@ -1,22 +1,118 @@
-  // Simple local cache for TMDB responses (shared key with Movies page)
-  const CACHE_KEY = 'tmdb_cache_v1';
-  const getCacheBucket = (): Record<string, { ts: number; data: any }> => {
-    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch { return {}; }
+  // Optimized cache for TMDB Trending responses
+  const CACHE_KEY = 'trending_tmdb_cache_v1';
+  const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+  const MAX_CACHE_SIZE = 5 * 1024 * 1024; // 5MB
+
+  // Async cache operations to prevent UI blocking
+  const getCacheBucket = async (): Promise<Record<string, { ts: number; data: any; size?: number }>> => {
+    try {
+      const data = await new Promise<string | null>((resolve) => {
+        try {
+          resolve(localStorage.getItem(CACHE_KEY));
+        } catch (e) {
+          console.error('Cache read error:', e);
+          resolve(null);
+        }
+      });
+      return data ? JSON.parse(data) : {};
+    } catch (e) {
+      console.error('Cache parse error:', e);
+      return {};
+    }
   };
-  const setCacheBucket = (bucket: Record<string, { ts: number; data: any }>) => {
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify(bucket)); } catch {}
+
+  const setCacheBucket = async (bucket: Record<string, { ts: number; data: any; size?: number }>) => {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify(bucket));
+          resolve();
+        } catch (e) {
+          console.error('Cache write error:', e);
+          reject(e);
+        }
+      });
+    } catch (e) {
+      console.error('Failed to update cache:', e);
+    }
   };
-  const readCached = (endpoint: string, maxAgeMs = 30 * 60 * 1000) => {
-    const bucket = getCacheBucket();
-    const entry = bucket[endpoint];
-    if (!entry) return null;
-    if (Date.now() - entry.ts > maxAgeMs) return null;
-    return entry.data;
+
+  const calculateSize = (obj: any): number => {
+    return new Blob([JSON.stringify(obj)]).size;
   };
-  const writeCached = (endpoint: string, data: any) => {
-    const bucket = getCacheBucket();
-    bucket[endpoint] = { ts: Date.now(), data };
-    setCacheBucket(bucket);
+
+  // Clean up old cache entries
+  const cleanupOldCache = async () => {
+    try {
+      const bucket = await getCacheBucket();
+      const now = Date.now();
+      let totalSize = 0;
+      let changed = false;
+
+      // Calculate total size and remove expired entries
+      Object.entries(bucket).forEach(([key, entry]) => {
+        if (now - entry.ts > CACHE_TTL) {
+          delete bucket[key];
+          changed = true;
+        } else {
+          totalSize += entry.size || 0;
+        }
+      });
+
+      // If still too large, remove oldest entries
+      if (totalSize > MAX_CACHE_SIZE) {
+        const sorted = Object.entries(bucket)
+          .sort((a, b) => a[1].ts - b[1].ts);
+
+        while (totalSize > MAX_CACHE_SIZE * 0.8 && sorted.length > 0) {
+          const [key, entry] = sorted.shift()!;
+          totalSize -= entry.size || 0;
+          delete bucket[key];
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await setCacheBucket(bucket);
+      }
+    } catch (e) {
+      console.error('Cache cleanup error:', e);
+    }
+  };
+
+  // Read from cache with automatic cleanup
+  const readCached = async (endpoint: string, maxAgeMs = CACHE_TTL) => {
+    try {
+      const bucket = await getCacheBucket();
+      const entry = bucket[endpoint];
+      
+      if (!entry) return null;
+      if (Date.now() - entry.ts > maxAgeMs) {
+        delete bucket[endpoint];
+        await setCacheBucket(bucket);
+        return null;
+      }
+      return entry.data;
+    } catch (e) {
+      console.error('Cache read error:', e);
+      return null;
+    }
+  };
+
+  // Write to cache with size tracking
+  const writeCached = async (endpoint: string, data: any) => {
+    try {
+      const bucket = await getCacheBucket();
+      bucket[endpoint] = { 
+        ts: Date.now(), 
+        data,
+        size: calculateSize(data)
+      };
+      await setCacheBucket(bucket);
+      await cleanupOldCache();
+    } catch (e) {
+      console.error('Cache write error:', e);
+    }
   };
 
 import { useState, useEffect } from "react";
@@ -100,11 +196,12 @@ const EnhancedTrending = () => {
           ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
           : `movie/popular?page=${recoPage}`;
         // Prefill from cache for instant recommendations
-        const cached = readCached(endpoint);
-        if (mounted && cached?.results && (recoMovies.length === 0)) {
-          const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
-          setRecoMovies((ranked as TMDBMovie[]).slice(0, desired));
-        }
+        readCached(endpoint).then(cached => {
+          if (mounted && cached?.results && (recoMovies.length === 0)) {
+            const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
+            setRecoMovies((ranked as TMDBMovie[]).slice(0, desired));
+          }
+        }).catch(console.error);
         const data = await fetchFromTMDB(endpoint);
         let list: TMDBMovie[] = [];
         if (data?.results) {
@@ -137,11 +234,12 @@ const EnhancedTrending = () => {
       const endpoint = genreParam
         ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
         : `movie/popular?page=${recoPage}`;
-      const cached = readCached(endpoint);
-      if (cached?.results) {
-        const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
-        setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
-      }
+      readCached(endpoint).then(cached => {
+        if (cached?.results) {
+          const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
+          setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
+        }
+      }).catch(console.error);
       const data = await fetchFromTMDB(endpoint);
       let list: TMDBMovie[] = [];
       if (data?.results) list = (data.results as TMDBMovie[]);
@@ -181,7 +279,7 @@ const EnhancedTrending = () => {
       try {
         const { data, error } = await withTimeout(invoke());
         if ((error as any)) throw error;
-        try { writeCached(endpoint, data); } catch {}
+        writeCached(endpoint, data).catch(console.error);
         return data as any;
       } catch (e) {
         lastErr = e;
@@ -197,18 +295,21 @@ const EnhancedTrending = () => {
     const epMovie = `trending/movie/${period}`;
     const epTV = `trending/tv/${period}`;
     // Prefill from cache to avoid empty UI on slow networks
-    const cachedMovie = readCached(epMovie);
-    const cachedTV = readCached(epTV);
-    if (cachedMovie?.results && movies.length === 0) {
-      const ranked = rankCandidates((cachedMovie.results as TMDBMovie[]), readHistory());
-      setMovies(ranked as TMDBMovie[]);
-    }
-    if (cachedTV?.results && tvShows.length === 0) {
-      const raw = (cachedTV.results || []) as any[];
-      const normalized = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
-      const ranked = rankCandidates(normalized, readHistory());
-      setTvShows(ranked as TMDBMovie[]);
-    }
+    Promise.all([
+      readCached(epMovie),
+      readCached(epTV)
+    ]).then(([cachedMovie, cachedTV]) => {
+      if (cachedMovie?.results && movies.length === 0) {
+        const ranked = rankCandidates((cachedMovie.results as TMDBMovie[]), readHistory());
+        setMovies(ranked as TMDBMovie[]);
+      }
+      if (cachedTV?.results && tvShows.length === 0) {
+        const raw = (cachedTV.results || []) as any[];
+        const normalized = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+        const ranked = rankCandidates(normalized, readHistory());
+        setTvShows(ranked as TMDBMovie[]);
+      }
+    }).catch(console.error);
 
     const [moviesData, tvData] = await Promise.all([
       fetchFromTMDB(epMovie),
@@ -274,16 +375,20 @@ const EnhancedTrending = () => {
 
     // Final guard: if still empty and no previous, try cached popular to avoid empty UI
     if (movieList.length === 0 && movies.length === 0) {
-      const cached = readCached('movie/popular?page=1');
-      if (cached?.results) setMovies(rankCandidates((cached.results as TMDBMovie[]), readHistory()) as TMDBMovie[]);
+      readCached('movie/popular?page=1').then(cached => {
+        if (cached?.results) {
+          setMovies(rankCandidates((cached.results as TMDBMovie[]), readHistory()) as TMDBMovie[]);
+        }
+      }).catch(console.error);
     }
     if (tvList.length === 0 && tvShows.length === 0) {
-      const cached = readCached('tv/popular?page=1');
-      if (cached?.results) {
-        const raw = (cached.results || []) as any[];
-        const norm = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
-        setTvShows(rankCandidates(norm, readHistory()) as TMDBMovie[]);
-      }
+      readCached('tv/popular?page=1').then(cached => {
+        if (cached?.results) {
+          const raw = (cached.results || []) as any[];
+          const norm = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+          setTvShows(rankCandidates(norm, readHistory()) as TMDBMovie[]);
+        }
+      }).catch(console.error);
     }
 
     setLoading(false);
