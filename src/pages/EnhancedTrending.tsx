@@ -542,8 +542,12 @@ const EnhancedTrending = () => {
         </div>
       </div>
 
-      <Tabs defaultValue="movies" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-8">
+      <Tabs defaultValue="recommendations" className="w-full">
+        <TabsList className="grid w-full grid-cols-3 mb-8">
+          <TabsTrigger value="recommendations" className="flex items-center gap-2">
+            <Star className="h-4 w-4" />
+            For You ({recommendedMovies.length})
+          </TabsTrigger>
           <TabsTrigger value="movies" className="flex items-center gap-2">
             <Film className="h-4 w-4" />
             Movies ({movies.length})
@@ -553,6 +557,28 @@ const EnhancedTrending = () => {
             TV Shows ({tvShows.length})
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="recommendations" className="mt-4">
+          {recommendedMovies.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+              {recommendedMovies.map((movie) => (
+                <MovieCard
+                  key={`rec-${movie.id}`}
+                  movie={movie}
+                  isFavorite={favorites.has(movie.id)}
+                  isInWatchlist={watchlist.has(movie.id)}
+                  onFavorite={handleFavorite}
+                  onWatchlist={handleWatchlist}
+                  onPlay={handlePlay}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground">No recommendations yet. Start watching movies to get personalized recommendations.</p>
+            </div>
+          )}
+        </TabsContent>
 
         <TabsContent value="movies">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
