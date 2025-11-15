@@ -178,7 +178,7 @@ const readHistory = (): any[] => {
 const EnhancedTrending = () => {
   // State
   const [period, setPeriod] = useState<TrendingPeriod>('day');
-  const [activeTab, setActiveTab] = useState<'movies' | 'tv'>('movies');
+  const [activeTab, setActiveTab] = useState<'movies' | 'tv' | 'recommendations'>('recommendations');
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [watchlist, setWatchlist] = useState<Set<number>>(new Set());
   const [recommendedMovies, setRecommendedMovies] = useState<TMDBMovie[]>([]);
@@ -295,6 +295,12 @@ const EnhancedTrending = () => {
         topRatedResponse.json()
       ]);
       
+      // Check if we have valid data
+      if (!popularData.results || !trendingData.results || !topRatedData.results) {
+        console.error('Invalid API response format:', { popularData, trendingData, topRatedData });
+        throw new Error('Invalid API response format');
+      }
+      
       // Combine and shuffle the results
       const combined = [
         ...(popularData.results || []).slice(0, 10),
@@ -302,19 +308,38 @@ const EnhancedTrending = () => {
         ...(topRatedData.results || []).slice(0, 10)
       ];
       
-      // Remove duplicates by ID
-      const uniqueMovies = Array.from(new Map(combined.map(movie => [movie.id, movie])).values());
+      // Remove duplicates by ID and filter out any null/undefined entries
+      const uniqueMovies = Array.from(
+        new Map(
+          combined
+            .filter(movie => movie && movie.id)
+            .map(movie => [movie.id, movie])
+        ).values()
+      );
       
       // Shuffle and take first 20
       const shuffled = uniqueMovies
         .sort(() => 0.5 - Math.random())
         .slice(0, 20);
       
+      console.log('Setting recommended movies:', shuffled);
       setRecommendedMovies(shuffled);
+      
+      // If we have recommended movies, switch to the recommendations tab
+      if (shuffled.length > 0) {
+        setActiveTab('recommendations');
+      }
     } catch (error) {
       console.error('Error fetching recommendations:', error);
       // Fallback to trending movies if there's an error
       fetchTrending();
+      
+      // Show error toast
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось загрузить рекомендации. Показываем популярные фильмы.',
+        variant: 'destructive',
+      });
     }
   }, [user, fetchTrending]);
 
@@ -568,11 +593,19 @@ const EnhancedTrending = () => {
         </div>
       </div>
 
-      <Tabs defaultValue="recommendations" className="w-full">
+      <Tabs 
+        value={activeTab} 
+        onValueChange={(value) => setActiveTab(value as 'movies' | 'tv' | 'recommendations')} 
+        className="w-full"
+      >
         <TabsList className="grid w-full grid-cols-3 mb-8">
-          <TabsTrigger value="recommendations" className="flex items-center gap-2">
+          <TabsTrigger 
+            value="recommendations" 
+            className="flex items-center gap-2"
+            onClick={() => setActiveTab('recommendations')}
+          >
             <Star className="h-4 w-4" />
-            For You ({recommendedMovies.length})
+            Для вас ({recommendedMovies.length})
           </TabsTrigger>
           <TabsTrigger value="movies" className="flex items-center gap-2">
             <Film className="h-4 w-4" />
