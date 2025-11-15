@@ -89,6 +89,8 @@ const EnhancedMovies = () => {
   const [showTop, setShowTop] = useState(false);
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [isLoadingTrailer, setIsLoadingTrailer] = useState(false);
+  const trailerCache = useRef<Record<number, string>>({});
+  const trailerLoadStartTime = useRef<number>(0);
   // Content category selector: user must pick first
   const [contentType, setContentType] = useState<'movie' | 'tv' | null>(null);
   // Ratings: per-user and aggregated per content
@@ -732,34 +734,106 @@ const EnhancedMovies = () => {
     searchMovies(searchQuery, selectedGenre, page);
   };
 
+  // Preload trailers for visible movies
+  useEffect(() => {
+    if (!isPlayerOpen) return;
+    
+    // Preload next few trailers in the background
+    const preloadTrailers = async () => {
+      const startIndex = Math.max(0, movies.findIndex(m => m.id === selectedMovie?.id));
+      const nextMovies = movies.slice(startIndex + 1, startIndex + 4);
+      
+      for (const movie of nextMovies) {
+        if (!trailerCache.current[movie.id]) {
+          try {
+            const { data } = await supabase.functions.invoke('tmdb-movies', {
+              body: { 
+                endpoint: `${contentType || 'movie'}/${movie.id}/videos`
+              }
+            });
+            const trailer = data?.results?.find((v: any) => 
+              v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')
+            );
+            if (trailer) {
+              trailerCache.current[movie.id] = trailer.key;
+            }
+          } catch (error) {
+            console.error('Error preloading trailer:', error);
+          }
+        }
+      }
+    };
+    
+    preloadTrailers();
+  }, [selectedMovie?.id, movies, contentType]);
+
   const handlePlayMovie = async (id: number, title: string) => {
+    setSelectedMovie({ id, title });
+    trailerLoadStartTime.current = Date.now();
+    
+    // Check cache first
+    if (trailerCache.current[id]) {
+      setTrailerKey(trailerCache.current[id]);
+      setIsPlayerOpen(true);
+      return;
+    }
+    
+    setIsLoadingTrailer(true);
+    
     try {
-      setIsLoadingTrailer(true);
-      // First try to get the trailer from TMDB
-      const { data } = await supabase.functions.invoke('tmdb-movies', {
+      // Show player immediately for better perceived performance
+      setIsPlayerOpen(true);
+      
+      // Define the response type for the TMDB videos endpoint
+      interface TMDBVideosResponse {
+        id: number;
+        results: Array<{
+          id: string;
+          key: string;
+          site: string;
+          type: string;
+          [key: string]: any;
+        }>;
+      }
+
+      // Получаем трейлер с таймаутом
+      const trailerPromise = supabase.functions.invoke('tmdb-movies', {
         body: { 
           endpoint: `${contentType || 'movie'}/${id}/videos`
         }
       });
-
-      // Find the first available trailer
-      const trailer = data?.results?.find((v: any) => 
+      
+      // Add a small delay to prevent flashing on fast connections
+      const timeoutPromise = new Promise<null>((resolve) => 
+        setTimeout(() => resolve(null), 200)
+      );
+      
+      const result = await Promise.race([trailerPromise, timeoutPromise]);
+      
+      // Если сработал таймаут, просто показываем загрузку
+      if (!result || !result.data) return;
+      
+      // Получаем данные о видео
+      const videoData = result.data as any; // Временное решение
+      const trailer = videoData.results?.find((v: any) => 
         v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')
       );
 
       if (trailer) {
+        trailerCache.current[id] = trailer.key;
         setTrailerKey(trailer.key);
-        setIsPlayerOpen(true);
       } else {
         // If no trailer found, try to search on YouTube directly
         const searchQuery = `${title} ${contentType === 'tv' ? 'TV Show' : 'Movie'} Official Trailer`;
         window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`, '_blank');
+        setIsPlayerOpen(false);
       }
     } catch (error) {
       console.error('Error fetching trailer:', error);
       // Fallback to YouTube search
       const searchQuery = `${title} ${contentType === 'tv' ? 'TV Show' : 'Movie'} Official Trailer`;
       window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`, '_blank');
+      setIsPlayerOpen(false);
     } finally {
       setIsLoadingTrailer(false);
     }
@@ -1139,29 +1213,53 @@ const EnhancedMovies = () => {
       )}
 
       {/* Video Player Modal */}
-      <Dialog open={isPlayerOpen} onOpenChange={setIsPlayerOpen}>
+      <Dialog open={isPlayerOpen} onOpenChange={(open) => {
+        if (!open) {
+          setIsPlayerOpen(false);
+          // Small delay to allow smooth animation
+          setTimeout(() => {
+            setTrailerKey(null);
+          }, 200);
+        }
+      }}>
         <DialogContent className="max-w-4xl p-0 bg-transparent border-0 overflow-hidden">
-          <div className="relative pt-[56.25%] w-full">
+          <div className="relative pt-[56.25%] w-full bg-black">
             <button 
-              onClick={() => setIsPlayerOpen(false)}
+              onClick={() => {
+                setIsPlayerOpen(false);
+                setTrailerKey(null);
+              }}
               className="absolute -top-10 right-0 z-50 text-white hover:text-gray-300 transition-colors"
             >
               <X className="w-6 h-6" />
             </button>
-            {isLoadingTrailer ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
-              </div>
-            ) : trailerKey ? (
+            
+            {/* Always show iframe to prevent loading delay */}
+            {trailerKey && (
               <iframe
+                key={trailerKey}
                 src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=0`}
                 className="absolute top-0 left-0 w-full h-full border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
                 title={selectedMovie?.title || 'Movie Trailer'}
+                loading="eager"
               />
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white">
+            )}
+            
+            {/* Loading overlay */}
+            {isLoadingTrailer && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80 transition-opacity">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-white mx-auto mb-4"></div>
+                  <p className="text-white">Loading trailer...</p>
+                </div>
+              </div>
+            )}
+            
+            {/* Error state */}
+            {!trailerKey && !isLoadingTrailer && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-white">
                 <p>No trailer available</p>
               </div>
             )}
