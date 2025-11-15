@@ -135,12 +135,25 @@ const MovieCard: React.FC<MovieCardProps> = ({
             </Badge>
           ))}
         </div>
-        <Button 
-          className="mt-4 w-full"
-          onClick={() => onPlay(movie)}
-        >
-          <Play className="h-4 w-4 mr-2" /> Watch
-        </Button>
+        <div className="flex flex-col gap-2 mt-4">
+          <Button 
+            className="w-full"
+            onClick={() => onPlay(movie)}
+          >
+            <Play className="h-4 w-4 mr-2" /> Watch Trailer
+          </Button>
+          <Button 
+            variant="outline"
+            className="w-full"
+            onClick={(e) => {
+              e.stopPropagation();
+              const searchQuery = encodeURIComponent(`${movie.title || movie.name} смотреть онлайн`);
+              window.open(`https://www.google.com/search?q=${searchQuery}`, '_blank', 'noopener,noreferrer');
+            }}
+          >
+            <Film className="h-4 w-4 mr-2" /> Watch Full Movie
+          </Button>
+        </div>
       </CardContent>
     </Card>
   </div>
@@ -273,73 +286,117 @@ const EnhancedTrending = () => {
   
   // Fetch personalized recommendations
   const fetchRecommendations = useCallback(async () => {
-    if (!user) return;
-    
+    const fetchWithFallback = async (url: string) => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not ok');
+        return await response.json();
+      } catch (error) {
+        console.error(`Failed to fetch from ${url}:`, error);
+        return { results: [] };
+      }
+    };
+
     try {
-      // For new users, show a mix of popular and trending movies
-      const [popularResponse, trendingResponse, topRatedResponse] = await Promise.all([
-        fetch(
-          `https://api.themoviedb.org/3/movie/popular?api_key=${process.env.VITE_TMDB_API_KEY}&language=ru-RU&page=1`
-        ),
-        fetch(
-          `https://api.themoviedb.org/3/trending/movie/day?api_key=${process.env.VITE_TMDB_API_KEY}&language=ru-RU`
-        ),
-        fetch(
-          `https://api.themoviedb.org/3/movie/top_rated?api_key=${process.env.VITE_TMDB_API_KEY}&language=ru-RU&page=1`
-        )
+      setLoading(true);
+      setError(null);
+      
+      // Always show recommendations tab when fetching
+      setActiveTab('recommendations');
+      
+      // Common fetch operations
+      const [popularData, trendingData] = await Promise.all([
+        fetchWithFallback(`https://api.themoviedb.org/3/movie/popular?api_key=${import.meta.env.VITE_TMDB_API_KEY}&language=ru-RU&page=1`),
+        fetchWithFallback(`https://api.themoviedb.org/3/trending/all/day?api_key=${import.meta.env.VITE_TMDB_API_KEY}&language=ru-RU`)
       ]);
       
-      const [popularData, trendingData, topRatedData] = await Promise.all([
-        popularResponse.json(),
-        trendingResponse.json(),
-        topRatedResponse.json()
-      ]);
-      
-      // Check if we have valid data
-      if (!popularData.results || !trendingData.results || !topRatedData.results) {
-        console.error('Invalid API response format:', { popularData, trendingData, topRatedData });
-        throw new Error('Invalid API response format');
+      // For non-logged in users, just show popular and trending
+      if (!user?.id) {
+        const combined = [
+          ...(popularData.results || []).slice(0, 15),
+          ...(trendingData.results || []).slice(0, 15)
+        ];
+        
+        const uniqueMovies = Array.from(
+          new Map(
+            combined
+              .filter(movie => movie && movie.id && movie.poster_path)
+              .map(movie => [movie.id, movie])
+          ).values()
+        );
+        
+        const shuffled = uniqueMovies
+          .sort(() => 0.5 - Math.random())
+          .slice(0, 20);
+        
+        setRecommendedMovies(shuffled);
+        return;
       }
       
-      // Combine and shuffle the results
-      const combined = [
-        ...(popularData.results || []).slice(0, 10),
-        ...(trendingData.results || []).slice(0, 10),
-        ...(topRatedData.results || []).slice(0, 10)
-      ];
-      
-      // Remove duplicates by ID and filter out any null/undefined entries
-      const uniqueMovies = Array.from(
-        new Map(
-          combined
-            .filter(movie => movie && movie.id)
-            .map(movie => [movie.id, movie])
-        ).values()
-      );
-      
-      // Shuffle and take first 20
-      const shuffled = uniqueMovies
-        .sort(() => 0.5 - Math.random())
-        .slice(0, 20);
-      
-      console.log('Setting recommended movies:', shuffled);
-      setRecommendedMovies(shuffled);
-      
-      // If we have recommended movies, switch to the recommendations tab
-      if (shuffled.length > 0) {
-        setActiveTab('recommendations');
+      // For logged-in users, try to get personalized recommendations
+      try {
+        // Get user's watch history
+        const { data: watchHistory = [] } = await (supabase as any)
+          .from('watch_history')
+          .select('movie_id, watched_at')
+          .eq('user_id', user.id)
+          .order('watched_at', { ascending: false })
+          .limit(10)
+          .catch(() => ({ data: [] }));
+        
+        let recommended = [];
+        
+        if (watchHistory.length > 0) {
+          // Get similar movies for watched content
+          const similarPromises = watchHistory.slice(0, 3).map(entry => 
+            fetchWithFallback(`https://api.themoviedb.org/3/movie/${entry.movie_id}/similar?api_key=${import.meta.env.VITE_TMDB_API_KEY}&language=ru-RU&page=1`)
+          );
+          
+          const similarResults = await Promise.all(similarPromises);
+          const similarMovies = similarResults.flatMap(data => data.results || []);
+          
+          recommended = [
+            ...similarMovies,
+            ...(popularData.results || []),
+            ...(trendingData.results || [])
+          ];
+        } else {
+          // For new users, show a mix of popular and trending
+          recommended = [
+            ...(popularData.results || []).slice(0, 15),
+            ...(trendingData.results || []).slice(0, 15)
+          ];
+        }
+        
+        // Filter and deduplicate
+        const validMovies = recommended
+          .filter(movie => movie?.id && movie.poster_path && (movie.title || movie.name))
+          .reduce((acc, movie) => {
+            if (!acc.some(m => m.id === movie.id)) {
+              acc.push(movie);
+            }
+            return acc;
+          }, [])
+          .slice(0, 20);
+        
+        setRecommendedMovies(validMovies);
+      } catch (error) {
+        console.error('Error in personalized recommendations:', error);
+        // Fallback to basic recommendations
+        const fallbackMovies = [
+          ...(popularData.results || []).slice(0, 10),
+          ...(trendingData.results || []).slice(0, 10)
+        ].filter(movie => movie?.id);
+        
+        setRecommendedMovies(Array.from(new Map(fallbackMovies.map(m => [m.id, m])).values()));
       }
     } catch (error) {
-      console.error('Error fetching recommendations:', error);
-      // Fallback to trending movies if there's an error
+      console.error('Error in fetchRecommendations:', error);
+      setError('Failed to load recommendations');
+      // Fallback to trending
       fetchTrending();
-      
-      // Show error toast
-      toast({
-        title: 'Ошибка',
-        description: 'Не удалось загрузить рекомендации. Показываем популярные фильмы.',
-        variant: 'destructive',
-      });
+    } finally {
+      setLoading(false);
     }
   }, [user, fetchTrending]);
 
