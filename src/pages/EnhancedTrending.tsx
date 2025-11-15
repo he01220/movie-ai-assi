@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Calendar, Clock, Heart, Bookmark, Play, Star, Film, Tv, TrendingUp, Image as ImageIcon } from "lucide-react";
+import { Calendar, Clock, Heart, Bookmark, Play, Star, Film, Tv, TrendingUp, Image as ImageIcon, Info } from "lucide-react";
 import VideoPlayerModal from "@/components/VideoPlayerModal";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -78,6 +78,7 @@ interface MovieCardProps {
   onFavorite: (id: number) => void;
   onWatchlist: (id: number) => void;
   onPlay: (movie: TMDBMovie) => void;
+  onViewDetails: (movie: TMDBMovie) => void;
 }
 
 // Movie Card Component
@@ -87,7 +88,8 @@ const MovieCard: React.FC<MovieCardProps> = ({
   isInWatchlist,
   onFavorite,
   onWatchlist,
-  onPlay
+  onPlay,
+  onViewDetails
 }) => (
   <div className="px-2 py-1 h-full">
     <Card className="h-full overflow-hidden transition-transform hover:scale-105 flex flex-col">
@@ -155,7 +157,17 @@ const MovieCard: React.FC<MovieCardProps> = ({
             className="w-full"
             onClick={() => onPlay(movie)}
           >
-            <Play className="h-4 w-4 mr-2" /> Watch Trailer
+            <Play className="h-4 w-4 mr-2" /> Смотреть трейлер
+          </Button>
+          <Button 
+            variant="outline"
+            className="w-full"
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewDetails(movie);
+            }}
+          >
+            <Info className="h-4 w-4 mr-2" /> Подробнее
           </Button>
           <Button 
             variant="outline"
@@ -166,7 +178,7 @@ const MovieCard: React.FC<MovieCardProps> = ({
               window.open(`https://www.google.com/search?q=${searchQuery}`, '_blank', 'noopener,noreferrer');
             }}
           >
-            <Film className="h-4 w-4 mr-2" /> Watch Full Movie
+            <Film className="h-4 w-4 mr-2" /> Смотреть фильм
           </Button>
         </div>
       </CardContent>
@@ -223,6 +235,11 @@ const EnhancedTrending = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // Handle view details
+  const handleViewDetails = useCallback((movie: TMDBMovie) => {
+    navigate(`/movie/${movie.id}`, { state: { movie } });
+  }, [navigate]);
 
   // Trending period options
   const trendingPeriods: TrendingPeriodOption[] = useMemo(() => [
@@ -727,6 +744,7 @@ const EnhancedTrending = () => {
                   onFavorite={handleFavorite}
                   onWatchlist={handleWatchlist}
                   onPlay={handlePlay}
+                  onViewDetails={handleViewDetails}
                 />
               ))}
             </div>
@@ -748,6 +766,7 @@ const EnhancedTrending = () => {
                 onFavorite={handleFavorite}
                 onWatchlist={handleWatchlist}
                 onPlay={handlePlay}
+                onViewDetails={handleViewDetails}
               />
             ))}
           </div>
@@ -764,6 +783,7 @@ const EnhancedTrending = () => {
                 onFavorite={handleFavorite}
                 onWatchlist={handleWatchlist}
                 onPlay={handlePlay}
+                onViewDetails={handleViewDetails}
               />
             ))}
           </div>
