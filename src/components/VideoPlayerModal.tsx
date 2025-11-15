@@ -51,54 +51,52 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
           ) : videoKey ? (
             <div className="absolute inset-0 flex flex-col">
               <div className="flex-1">
-            <iframe
-              key={videoKey}
-              src={`https://www.youtube.com/embed/${videoKey}?autoplay=1&mute=0`}
-              className="absolute top-0 left-0 w-full h-full border-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-                title={movieTitle}
-                loading="eager"
-              />
-              </div>
-              <div className="absolute bottom-4 left-0 right-0 flex justify-center space-x-4">
-                <Button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSearchInBrowser(false);
-                  }}
-                  variant="default"
-                  className="bg-red-600 hover:bg-red-700 text-white py-3 px-8 flex items-center text-lg font-semibold 
-                  shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300
-                  animate-pulse hover:animate-none opacity-90 hover:opacity-100"
-                >
-                  <Film className="w-5 h-5 mr-2" />
-                  Смотреть фильм!
-                </Button>
+                <iframe
+                  key={videoKey}
+                  src={`https://www.youtube.com/embed/${videoKey}?autoplay=1&mute=0`}
+                  className="absolute top-0 left-0 w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  title={movieTitle}
+                  loading="eager"
+                />
               </div>
             </div>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-4 text-center">
               <p className="text-xl font-medium mb-2">Трейлер не найден</p>
               <p className="mb-6 text-gray-300">К сожалению, трейлер для этого фильма недоступен.</p>
-              <div className="flex flex-col space-y-3 w-full max-w-xs">
-                <Button 
-                  onClick={() => handleSearchInBrowser(true)}
-                  variant="default"
-                  className="bg-red-600 hover:bg-red-700 text-white py-2"
-                >
-                  <Play className="w-4 h-4 mr-2" />
-                  Найти трейлер
-                </Button>
-                <Button
-                  onClick={() => handleSearchInBrowser(false)}
-                  variant="outline"
-                  className="text-white border-white/30 hover:bg-white/10 py-2"
-                >
-                  <Globe className="w-4 h-4 mr-2" />
-                  Смотреть фильм онлайн
-                </Button>
-              </div>
+            </div>
+          )}
+          
+          {/* Always show Watch Full Movie button at the bottom */}
+          <div className="absolute bottom-4 left-0 right-0 flex justify-center space-x-4">
+            <Button 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSearchInBrowser(false);
+              }}
+              variant="default"
+              className="bg-red-600 hover:bg-red-700 text-white py-3 px-8 flex items-center text-lg font-semibold 
+              shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300
+              animate-pulse hover:animate-none opacity-90 hover:opacity-100 z-50"
+            >
+              <Film className="w-5 h-5 mr-2" />
+              Смотреть фильм!
+            </Button>
+          </div>
+          
+          {/* Show additional options when no video is available */}
+          {!videoKey && !isLoading && (
+            <div className="absolute bottom-20 left-0 right-0 flex justify-center">
+              <Button 
+                onClick={() => handleSearchInBrowser(true)}
+                variant="outline"
+                className="text-white border-white/30 hover:bg-white/10 py-2 mr-2"
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Найти трейлер
+              </Button>
             </div>
           )}
         </div>
