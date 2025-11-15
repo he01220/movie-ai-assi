@@ -185,9 +185,18 @@ const MovieDetails = () => {
     }
   };
 
-  const handleTrailerClick = (key: string) => {
-    logTrailerPlay(movie?.id || 0, movie?.title || '');
-    window.open(`https://www.youtube.com/watch?v=${key}`, '_blank');
+  const handleTrailerClick = (key: string, type: string) => {
+    try {
+      logTrailerPlay(movie?.id || 0, movie?.title || '');
+      window.open(`https://www.youtube.com/watch?v=${key}`, '_blank');
+    } catch (error) {
+      console.error('Error playing trailer:', error);
+      toast({
+        title: "Ошибка воспроизведения",
+        description: `Не удалось открыть ${type === 'Trailer' ? 'трейлер' : 'видео'}. Пожалуйста, попробуйте позже.`,
+        variant: "destructive"
+      });
+    }
   };
 
   const handleShare = async () => {
@@ -249,23 +258,33 @@ const MovieDetails = () => {
         </div>
         
         {/* Trailer Section */}
-        {movie.videos?.results && movie.videos.results.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4">Трейлеры и видео</h2>
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold mb-4">Трейлеры и видео</h2>
+          {movie.videos?.results && movie.videos.results.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {movie.videos.results
-                .filter(video => video.site === 'YouTube' && (video.type === 'Trailer' || video.type === 'Teaser'))
+                .filter(video => video.site === 'YouTube' && (video.type === 'Trailer' || video.type === 'Teaser' || video.type === 'Clip'))
+                .sort((a, b) => {
+                  // Sort trailers first, then teasers, then clips
+                  if (a.type === 'Trailer' && b.type !== 'Trailer') return -1;
+                  if (a.type !== 'Trailer' && b.type === 'Trailer') return 1;
+                  if (a.type === 'Teaser' && b.type === 'Clip') return -1;
+                  return 0;
+                })
                 .map((video) => (
                   <div 
                     key={video.key} 
                     className="relative cursor-pointer group"
-                    onClick={() => handleTrailerClick(video.key)}
+                    onClick={() => handleTrailerClick(video.key, video.type)}
                   >
                     <div className="aspect-video bg-muted rounded-lg overflow-hidden relative">
                       <img 
                         src={`https://img.youtube.com/vi/${video.key}/hqdefault.jpg`} 
                         alt={video.name}
                         className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = '/placeholder.svg';
+                        }}
                       />
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center opacity-90 group-hover:opacity-100 transition-opacity">
@@ -277,13 +296,30 @@ const MovieDetails = () => {
                     </div>
                     <h3 className="mt-2 text-sm font-medium line-clamp-2">{video.name}</h3>
                     <p className="text-xs text-muted-foreground">
-                      {video.type === 'Trailer' ? 'Трейлер' : 'Тизер'} • {video.site}
+                      {video.type === 'Trailer' ? 'Трейлер' : 
+                       video.type === 'Teaser' ? 'Тизер' : 
+                       video.type === 'Clip' ? 'Клип' : video.type} • {video.site}
                     </p>
                   </div>
                 ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="bg-muted/50 p-6 rounded-lg text-center">
+              <p className="text-muted-foreground">К сожалению, трейлеры для этого фильма пока недоступны.</p>
+              <p className="text-sm text-muted-foreground mt-2">Попробуйте посмотреть другие видео о фильме на YouTube.</p>
+              <Button 
+                variant="outline" 
+                className="mt-4"
+                onClick={() => {
+                  const searchQuery = encodeURIComponent(`${movie.title} ${movie.release_date ? movie.release_date.split('-')[0] : ''} official trailer`);
+                  window.open(`https://www.youtube.com/results?search_query=${searchQuery}`, '_blank');
+                }}
+              >
+                Искать на YouTube
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
       
       {/* Hero Section */}
