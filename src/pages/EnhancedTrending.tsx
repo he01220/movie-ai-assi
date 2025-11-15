@@ -10,6 +10,16 @@ import type { Database } from "@/integrations/supabase/types";
 
 type Tables = Database['public']['Tables'];
 type Profile = Tables['profiles']['Row'];
+
+type UserActivity = {
+  id: string;
+  user_id: string;
+  content_id: string;
+  activity_type: string;
+  content_type: string;
+  metadata: Record<string, any>;
+  created_at: string;
+};
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
@@ -165,18 +175,21 @@ const readHistory = (): any[] => {
   }
 };
 
-const EnhancedTrending: React.FC = () => {
+const EnhancedTrending = () => {
   // State
-  const [movies, setMovies] = useState<TMDBMovie[]>([]);
-  const [tvShows, setTvShows] = useState<TMDBMovie[]>([]);
+  const [period, setPeriod] = useState<TrendingPeriod>('day');
+  const [activeTab, setActiveTab] = useState<'movies' | 'tv'>('movies');
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [watchlist, setWatchlist] = useState<Set<number>>(new Set());
+  const [recommendedMovies, setRecommendedMovies] = useState<TMDBMovie[]>([]);
+  const [userHistory, setUserHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState<boolean>(false);
   const [selectedMovie, setSelectedMovie] = useState<TMDBMovie | null>(null);
   const [videoKey, setVideoKey] = useState<string>('');
-  const [period, setPeriod] = useState<TrendingPeriod>('day');
+  const [movies, setMovies] = useState<TMDBMovie[]>([]);
+  const [tvShows, setTvShows] = useState<TMDBMovie[]>([]);
   
   // Hooks
   const { user } = useAuth();
@@ -190,7 +203,7 @@ const EnhancedTrending: React.FC = () => {
   ], []);
 
   // Fetch trending movies and TV shows
-  const fetchTrending = useCallback(async (period: TrendingPeriod) => {
+  const fetchTrending = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -219,12 +232,65 @@ const EnhancedTrending: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [period, toast]);
 
-  // Fetch initial data
+  // Fetch movies and TV shows
   useEffect(() => {
-    fetchTrending(period);
-  }, [period, fetchTrending]);
+    const loadData = async () => {
+      await fetchTrending();
+      if (user?.id) {
+        try {
+          await fetchUserHistory();
+          await fetchRecommendations();
+        } catch (err) {
+          console.error('Error loading user data:', err);
+          setError(err instanceof Error ? err.message : 'An unknown error occurred');
+        }
+      }
+    };
+    
+    loadData();
+  }, [period, activeTab, user?.id]);
+  
+  // Fetch user's watch history
+  const fetchUserHistory = useCallback(async () => {
+    if (!user?.id) return;
+    
+    try {
+      const { data: history } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      
+      if (history) {
+        setUserHistory(history);
+      }
+    } catch (error) {
+      console.error('Error fetching user history:', error);
+    }
+  }, [user?.id]);
+  
+  // Fetch personalized recommendations
+  const fetchRecommendations = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      // For new users, we'll show popular movies from TMDB
+      const response = await fetch(
+        `https://api.themoviedb.org/3/movie/popular?api_key=${process.env.VITE_TMDB_API_KEY}&language=en-US&page=1`
+      );
+      const data = await response.json();
+      
+      if (data.results) {
+        setRecommendedMovies(data.results);
+      }
+    } catch (error) {
+      console.error('Error fetching recommendations:', error);
+      // Fallback to trending movies if there's an error
+      fetchTrending();
+    }
+  }, [user, fetchTrending]);
 
   // Handle favorite toggle
   const handleFavorite = useCallback(async (movieId: number) => {
@@ -280,7 +346,7 @@ const EnhancedTrending: React.FC = () => {
 
   // Handle watchlist toggle
   const handleWatchlist = useCallback(async (movieId: number) => {
-    if (!user) {
+    if (!user?.id) {
       toast({
         title: 'Please sign in',
         description: 'You need to be signed in to add to watchlist',
@@ -288,38 +354,31 @@ const EnhancedTrending: React.FC = () => {
       });
       return;
     }
-
-    const newWatchlist = new Set(watchlist);
-    const isInWatchlist = newWatchlist.has(movieId);
-
+    
+    const isInWatchlist = watchlist.has(movieId);
+    const updatedWatchlist = new Set(watchlist);
+    
+    if (isInWatchlist) {
+      updatedWatchlist.delete(movieId);
+    } else {
+      updatedWatchlist.add(movieId);
+    }
+    
+    setWatchlist(updatedWatchlist);
+    
     try {
-      if (isInWatchlist) {
-        // Remove from watchlist
-        await supabase
-          .from('notifications')
-          .delete()
-          .match({ 
-            user_id: user.id, 
-            content_id: movieId.toString(),
-            type: 'watchlist'
-          });
-        newWatchlist.delete(movieId);
-      } else {
-        // Add to watchlist
-        await supabase
-          .from('notifications')
-          .insert({
-            user_id: user.id,
-            content_id: movieId.toString(),
-            type: 'watchlist',
-            title: 'Added to watchlist',
-            message: `Added movie ${movieId} to your watchlist`,
-            created_at: new Date().toISOString()
-          });
-        newWatchlist.add(movieId);
-      }
-      
-      setWatchlist(newWatchlist);
+      await supabase
+        .from('notifications')
+        .upsert({
+          user_id: user.id,
+          content_id: movieId.toString(),
+          type: 'watchlist',
+          is_read: false,
+          data: { is_watchlist: !isInWatchlist },
+          updated_at: new Date().toISOString(),
+        } as any, {
+          onConflict: 'user_id,content_id',
+        });
     } catch (error) {
       console.error('Error updating watchlist:', error);
       toast({
@@ -327,51 +386,112 @@ const EnhancedTrending: React.FC = () => {
         description: 'Failed to update watchlist',
         variant: 'destructive',
       });
+      // Revert UI on error
+      setWatchlist(watchlist);
     }
   }, [user, watchlist, toast]);
 
   // Handle play button click
   const handlePlay = useCallback(async (movie: TMDBMovie) => {
+    if (!movie) return;
+    
     setSelectedMovie(movie);
     setIsPlayerOpen(true);
     
-    try {
-      // Fetch video key from TMDB API
-      const response = await fetch(
-        `https://api.themoviedb.org/3/movie/${movie.id}/videos?api_key=${process.env.REACT_APP_TMDB_API_KEY}`
-      );
-      const data = await response.json();
-      const trailer = data.results.find((v: any) => v.type === 'Trailer' && v.site === 'YouTube');
+    const logActivity = async () => {
+      if (!user?.id) return;
       
-      if (trailer) {
-        setVideoKey(trailer.key);
-      } else {
-        toast({
-          title: 'No trailer available',
-          description: 'Sorry, no trailer is available for this movie',
-          variant: 'default',
-        });
+      const activityData = {
+        user_id: user.id,
+        content_id: movie.id.toString(),
+        type: 'movie_play',
+        is_read: false,
+        message: `Played ${movie.title || movie.name || 'content'}`,
+        title: 'Content Played',
+        data: { 
+          activity_type: 'movie_play',
+          content_type: movie.media_type || 'movie',
+          title: movie.title || movie.name || '',
+          poster_path: movie.poster_path || ''
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      try {
+        await supabase
+          .from('notifications')
+          .insert([activityData] as any);
+        
+        // Update recommendations after logging activity
+        if (fetchRecommendations) {
+          fetchRecommendations();
+        }
+      } catch (dbError: any) {
+        console.error('Error logging activity:', dbError);
+        setError(dbError.message);
       }
+    };
+
+    const fetchTrailer = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(
+          `https://api.themoviedb.org/3/movie/${movie.id}/videos?api_key=${process.env.VITE_TMDB_API_KEY}`
+        );
+        const data = await response.json();
+        const trailer = data.results?.find((v: any) => v.type === 'Trailer' && v.site === 'YouTube');
+        
+        if (trailer?.key) {
+          setVideoKey(trailer.key);
+        } else {
+          toast({
+            title: 'No trailer available',
+            description: 'Sorry, no trailer is available for this movie',
+            variant: 'default',
+          });
+        }
+      } catch (fetchError) {
+        console.error('Error fetching trailer:', fetchError);
+        setError('Failed to load trailer');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    try {
+      await Promise.all([
+        logActivity(),
+        fetchTrailer()
+      ]);
     } catch (error) {
-      console.error('Error fetching video:', error);
+      console.error('Error in handlePlay:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load video',
+        description: 'Failed to process your request',
         variant: 'destructive',
       });
     }
-  }, [toast]);
+  }, [user, toast, fetchRecommendations]);
 
   // Get content genres as a string
   const getContentGenres = useCallback((genreIds: number[]): string => {
+    if (!genreIds || !Array.isArray(genreIds)) return '';
+    const genreMap: Record<number, string> = GENRE_MAP || {};
     return genreIds
       .slice(0, 2)
-      .map(id => GENRE_MAP[id])
+      .map(id => genreMap[id] || '')
       .filter(Boolean)
       .join(' • ');
   }, []);
 
-  if (loading) {
+  // Derived state
+  const hasMovies = Array.isArray(movies) && movies.length > 0;
+  const hasTvShows = Array.isArray(tvShows) && tvShows.length > 0;
+  const isLoading = loading && !hasMovies && !hasTvShows;
+  const hasError = error !== null && !hasMovies && !hasTvShows;
+
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
@@ -379,13 +499,13 @@ const EnhancedTrending: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (hasError) {
     return (
       <div className="text-center py-8">
-        <p className="text-red-500">{error}</p>
+        <p className="text-red-500">{error || 'An error occurred'}</p>
         <Button 
           className="mt-4"
-          onClick={() => fetchTrending(period)}
+          onClick={fetchTrending}
         >
           Retry
         </Button>
