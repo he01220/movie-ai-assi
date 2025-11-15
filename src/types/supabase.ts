@@ -9,6 +9,29 @@ export type Json =
   | Json[]
 
 type CustomTables = {
+  tmdb_cache: {
+    Row: {
+      id: string
+      key: string
+      data: Json
+      expires_at: string
+      created_at: string
+    }
+    Insert: {
+      id?: string
+      key: string
+      data: Json
+      expires_at: string
+      created_at?: string
+    }
+    Update: {
+      id?: string
+      key?: string
+      data?: Json
+      expires_at?: string
+      created_at?: string
+    }
+  }
   user_ratings: {
     Row: {
       id: string

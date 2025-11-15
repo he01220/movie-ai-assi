@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TrendingUp, TrendingDown, Calendar, Star, Play, Heart, Bookmark, Clock, Globe } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { Database } from "@/types/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
@@ -12,18 +13,57 @@ import VideoPlayerModal from "@/components/VideoPlayerModal";
 import { readHistory, logTrailerPlay, logExternalSearch, logMovieOpen, getTopGenresFromHistory, hydrateHistoryFromSupabase } from "@/utils/history";
 import { rankCandidates } from "@/utils/reco";
 
-// In-memory cache for faster access
-const memoryCache: Record<string, { data: any; timestamp: number }> = {};
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+// Кэширование в Supabase
+const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
 
-// Optimized fetch function with memory cache
+// Функция для сохранения в кэш Supabase
+const saveToCache = async (key: string, data: any) => {
+  try {
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1); // Кэшируем на 1 час
+
+    const { error } = await supabase
+      .from('tmdb_cache' as never) // Используем тип never, так как таблица не определена в генерируемых типах
+      .upsert({
+        key,
+        data,
+        expires_at: expiresAt.toISOString()
+      } as never);
+
+    if (error) {
+      console.error('Ошибка при сохранении в Supabase:', error);
+    }
+  } catch (error) {
+    console.error('Неизвестная ошибка при сохранении в кэш:', error);
+  }
+};
+
+// Функция для получения из кэша Supabase
+const getFromCache = async (key: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('tmdb_cache' as never) // Используем тип never, так как таблица не определена в генерируемых типах
+      .select('data, expires_at')
+      .eq('key', key)
+      .gt('expires_at', new Date().toISOString())
+      .single();
+
+    if (error || !data) return null;
+    return (data as any).data;
+  } catch (error) {
+    console.error('Ошибка при получении из кэша Supabase:', error);
+    return null;
+  }
+};
+
+// Оптимизированная функция для загрузки данных с кэшированием
 const fetchFromTMDB = async (endpoint: string, opts: { retries?: number; timeoutMs?: number } = {}) => {
   const cacheKey = `tmdb_${endpoint}`;
-  const now = Date.now();
   
-  // Check memory cache first
-  if (memoryCache[cacheKey] && now - memoryCache[cacheKey].timestamp < CACHE_DURATION) {
-    return memoryCache[cacheKey].data;
+  // Пробуем получить из кэша
+  const cachedData = await getFromCache(cacheKey);
+  if (cachedData) {
+    return cachedData;
   }
 
   const retries = opts.retries ?? 2;
@@ -36,6 +76,9 @@ const fetchFromTMDB = async (endpoint: string, opts: { retries?: number; timeout
       });
       
       if (error) throw error;
+      
+      // Сохраняем в кэш
+      await saveToCache(cacheKey, data);
       return data;
     } catch (error) {
       console.error('TMDB API error:', error);
@@ -51,8 +94,6 @@ const fetchFromTMDB = async (endpoint: string, opts: { retries?: number; timeout
       const data = await invoke();
       clearTimeout(timeoutId);
       
-      // Cache the successful response
-      memoryCache[cacheKey] = { data, timestamp: now };
       return data;
     } catch (error) {
       if (i === retries) {
@@ -117,30 +158,28 @@ const EnhancedTrending = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   
-  // Refs for data processing and caching
+  // Refs for data processing
   const userPreferencesCache = useRef<Record<string, any>>({});
-  const apiCache = useRef<Record<string, { data: any; timestamp: number }>>({});
-  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   const movieListRef = useRef<TMDBMovie[]>([]);
   const tvListRef = useRef<TMDBMovie[]>([]);
   
   // Ensure user is properly typed
   const currentUser = user || null;
   
-  // Cache helper functions
-  const readCached = useCallback((key: string) => {
-    const cached = apiCache.current[key];
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return cached.data;
+  // Функция для загрузки пользовательских предпочтений с кэшированием
+  const readCached = useCallback(async (key: string) => {
+    try {
+      const data = await getFromCache(key);
+      return data || { results: [] };
+    } catch (error) {
+      console.error('Error reading from cache:', error);
+      return { results: [] };
     }
-    return null;
   }, []);
 
-  const writeCached = useCallback((key: string, data: any) => {
-    apiCache.current[key] = {
-      data,
-      timestamp: Date.now()
-    };
+  // Функция для сохранения данных с кэшированием
+  const writeCached = useCallback(async (key: string, data: any) => {
+    await saveToCache(key, data);
   }, []);
 
   // Fetch user preferences
@@ -173,13 +212,23 @@ const EnhancedTrending = () => {
     }
   }, [currentUser]);
 
-  // Fetch trending content
+  // Загрузка трендового контента с кэшированием
   const fetchTrendingContent = useCallback(async () => {
     if (!isMounted.current) return;
     
     setLoading(true);
+    const cacheKey = `trending_${period}`;
     const epMovie = `trending/movie/${period}`;
     const epTV = `trending/tv/${period}`;
+    
+    // Try to get from cache first
+    const cachedData = await getFromCache(cacheKey);
+    if (cachedData && isMounted.current) {
+      setMovies(cachedData.movies || []);
+      setTvShows(cachedData.tvShows || []);
+      setLoading(false); // Don't show loading if we have cached data
+      return;
+    }
     
     try {
       const [moviesData, tvData] = await Promise.all([
@@ -196,8 +245,14 @@ const EnhancedTrending = () => {
               release_date: m.release_date || m.first_air_date || ''
             })),
             readHistory()
-          );
-          setMovies(ranked as TMDBMovie[]);
+          ) as TMDBMovie[];
+          setMovies(ranked);
+          
+          // Save to cache
+          await saveToCache(cacheKey, {
+            movies: ranked,
+            tvShows: tvData?.results || []
+          });
         }
         
         if (tvData?.results) {
@@ -208,8 +263,8 @@ const EnhancedTrending = () => {
               release_date: m.release_date || m.first_air_date || ''
             })),
             readHistory()
-          );
-          setTvShows(ranked as TMDBMovie[]);
+          ) as TMDBMovie[];
+          setTvShows(ranked);
         }
       }
     } catch (error) {
@@ -270,21 +325,28 @@ const EnhancedTrending = () => {
   };
 
   useEffect(() => {
-    isMounted.current = true;
+    // Очистка устаревшего кэша при загрузке
+    const cleanupOldCache = async () => {
+      try {
+        await supabase
+          .from('tmdb_cache' as never) // Используем тип never, так как таблица не определена в генерируемых типах
+          .delete()
+          .lt('expires_at', new Date().toISOString());
+      } catch (error) {
+        console.error('Ошибка при очистке устаревшего кэша:', error);
+      }
+    };
     
+    cleanupOldCache();
+    
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const initialize = async () => {
       try {
-        await fetchTrendingContent();
-        
-        if (currentUser) {
-          await fetchUserPreferences();
-          try {
-            await hydrateHistoryFromSupabase();
-          } catch (error) {
-            console.error('Error hydrating history:', error);
-          }
-        }
-        
         const history = readHistory();
         const topGenres = getTopGenresFromHistory();
         const totalEvents = (history.events || []).length;
@@ -300,7 +362,7 @@ const EnhancedTrending = () => {
           : `movie/popular?page=${recoPage}`;
           
         // Prefill from cache for instant recommendations
-        const cachedData = readCached(recEndpoint);
+        const cachedData = await readCached(recEndpoint);
         if (isMounted.current && cachedData?.results && recoMovies.length === 0) {
           const ranked = rankCandidates(
             cachedData.results.map((m: any) => ({
@@ -309,8 +371,11 @@ const EnhancedTrending = () => {
               release_date: m.release_date || m.first_air_date || ''
             })),
             history
-          );
-          setRecoMovies(ranked.slice(0, recoCount) as TMDBMovie[]);
+          ) as TMDBMovie[];
+          
+          if (isMounted.current) {
+            setRecoMovies(ranked.slice(0, recoCount));
+          }
         }
       } catch (error) {
         console.error('Error initializing:', error);
