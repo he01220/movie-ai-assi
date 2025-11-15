@@ -1,109 +1,37 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+  // Simple local cache for TMDB responses (shared key with Movies page)
+  const CACHE_KEY = 'tmdb_cache_v1';
+  const getCacheBucket = (): Record<string, { ts: number; data: any }> => {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch { return {}; }
+  };
+  const setCacheBucket = (bucket: Record<string, { ts: number; data: any }>) => {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(bucket)); } catch {}
+  };
+  const readCached = (endpoint: string, maxAgeMs = 30 * 60 * 1000) => {
+    const bucket = getCacheBucket();
+    const entry = bucket[endpoint];
+    if (!entry) return null;
+    if (Date.now() - entry.ts > maxAgeMs) return null;
+    return entry.data;
+  };
+  const writeCached = (endpoint: string, data: any) => {
+    const bucket = getCacheBucket();
+    bucket[endpoint] = { ts: Date.now(), data };
+    setCacheBucket(bucket);
+  };
+
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TrendingUp, TrendingDown, Calendar, Star, Play, Heart, Bookmark, Clock, Globe } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { Database } from "@/types/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import VideoPlayerModal from "@/components/VideoPlayerModal";
 import { readHistory, logTrailerPlay, logExternalSearch, logMovieOpen, getTopGenresFromHistory, hydrateHistoryFromSupabase } from "@/utils/history";
 import { rankCandidates } from "@/utils/reco";
-
-// Кэширование в Supabase
-const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
-
-// Функция для сохранения в кэш Supabase
-const saveToCache = async (key: string, data: any) => {
-  try {
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 1); // Кэшируем на 1 час
-
-    const { error } = await supabase
-      .from('tmdb_cache' as never) // Используем тип never, так как таблица не определена в генерируемых типах
-      .upsert({
-        key,
-        data,
-        expires_at: expiresAt.toISOString()
-      } as never);
-
-    if (error) {
-      console.error('Ошибка при сохранении в Supabase:', error);
-    }
-  } catch (error) {
-    console.error('Неизвестная ошибка при сохранении в кэш:', error);
-  }
-};
-
-// Функция для получения из кэша Supabase
-const getFromCache = async (key: string) => {
-  try {
-    const { data, error } = await supabase
-      .from('tmdb_cache' as never) // Используем тип never, так как таблица не определена в генерируемых типах
-      .select('data, expires_at')
-      .eq('key', key)
-      .gt('expires_at', new Date().toISOString())
-      .single();
-
-    if (error || !data) return null;
-    return (data as any).data;
-  } catch (error) {
-    console.error('Ошибка при получении из кэша Supabase:', error);
-    return null;
-  }
-};
-
-// Оптимизированная функция для загрузки данных с кэшированием
-const fetchFromTMDB = async (endpoint: string, opts: { retries?: number; timeoutMs?: number } = {}) => {
-  const cacheKey = `tmdb_${endpoint}`;
-  
-  // Пробуем получить из кэша
-  const cachedData = await getFromCache(cacheKey);
-  if (cachedData) {
-    return cachedData;
-  }
-
-  const retries = opts.retries ?? 2;
-  const timeoutMs = opts.timeoutMs ?? 5000;
-  
-  const invoke = async () => {
-    try {
-      const { data, error } = await supabase.functions.invoke('tmdb-movies', {
-        body: { endpoint }
-      });
-      
-      if (error) throw error;
-      
-      // Сохраняем в кэш
-      await saveToCache(cacheKey, data);
-      return data;
-    } catch (error) {
-      console.error('TMDB API error:', error);
-      throw error;
-    }
-  };
-
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      
-      const data = await invoke();
-      clearTimeout(timeoutId);
-      
-      return data;
-    } catch (error) {
-      if (i === retries) {
-        console.error('TMDB API error after retries:', error);
-        throw error;
-      }
-      await new Promise(resolve => setTimeout(resolve, 300 * (i + 1)));
-    }
-  }
-};
 
 interface TMDBMovie {
   id: number;
@@ -115,8 +43,6 @@ interface TMDBMovie {
   vote_average: number;
   popularity: number;
   genre_ids: number[];
-  name?: string; // For TV shows
-  first_air_date?: string; // For TV shows
 }
 
 interface TrendingPeriod {
@@ -138,7 +64,6 @@ const GENRE_MAP: { [key: number]: string } = {
 };
 
 const EnhancedTrending = () => {
-  // State for movies and TV shows
   const [movies, setMovies] = useState<TMDBMovie[]>([]);
   const [tvShows, setTvShows] = useState<TMDBMovie[]>([]);
   const [period, setPeriod] = useState<'day' | 'week'>('week');
@@ -152,270 +77,492 @@ const EnhancedTrending = () => {
   const [recoPage, setRecoPage] = useState(1);
   const [recoCount, setRecoCount] = useState<number>(8);
   
-  // Refs and hooks
-  const isMounted = useRef(true);
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  
-  // Refs for data processing
-  const userPreferencesCache = useRef<Record<string, any>>({});
-  const movieListRef = useRef<TMDBMovie[]>([]);
-  const tvListRef = useRef<TMDBMovie[]>([]);
-  
-  // Ensure user is properly typed
-  const currentUser = user || null;
-  
-  // Функция для загрузки пользовательских предпочтений с кэшированием
-  const readCached = useCallback(async (key: string) => {
-    try {
-      const data = await getFromCache(key);
-      return data || { results: [] };
-    } catch (error) {
-      console.error('Error reading from cache:', error);
-      return { results: [] };
-    }
-  }, []);
 
-  // Функция для сохранения данных с кэшированием
-  const writeCached = useCallback(async (key: string, data: any) => {
-    await saveToCache(key, data);
-  }, []);
-
-  // Fetch user preferences
-  const fetchUserPreferences = useCallback(async () => {
-    if (!currentUser) return {};
-    
-    const cacheKey = `user_prefs_${currentUser.id}`;
-    
-    // Return from cache if available
-    if (userPreferencesCache.current[cacheKey]) {
-      return userPreferencesCache.current[cacheKey];
+  useEffect(() => {
+    let mounted = true;
+    fetchTrendingContent();
+    if (user) {
+      fetchUserPreferences();
     }
-    
-    try {
-      const { data, error } = await supabase
-        .from('user_preferences')
-        .select('*')
-        .eq('user_id', currentUser.id)
-        .single();
-      
-      if (error && error.code !== 'PGRST116') throw error;
-      
-      // Cache the result
-      const result = data || {};
-      userPreferencesCache.current[cacheKey] = result;
-      return result;
-    } catch (error) {
-      console.error('Error fetching user preferences:', error);
-      return {};
-    }
-  }, [currentUser]);
+    (async () => {
+      try {
+        try { if (user?.id) await hydrateHistoryFromSupabase(); } catch {}
+        if (!mounted) return;
+        const top = getTopGenresFromHistory();
+        const totalEvents = (readHistory().events || []).length;
+        const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
+        if (desired !== recoCount) setRecoCount(desired);
+        const genreParam = top.slice(0, 3).join(',');
+        const endpoint = genreParam
+          ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
+          : `movie/popular?page=${recoPage}`;
+        // Prefill from cache for instant recommendations
+        const cached = readCached(endpoint);
+        if (mounted && cached?.results && (recoMovies.length === 0)) {
+          const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
+          setRecoMovies((ranked as TMDBMovie[]).slice(0, desired));
+        }
+        const data = await fetchFromTMDB(endpoint);
+        let list: TMDBMovie[] = [];
+        if (data?.results) {
+          list = (data.results as TMDBMovie[]);
+        } else {
+          // Fallback to popular if discover failed
+          const pop = await fetchFromTMDB(`movie/popular?page=${recoPage}`);
+          if (pop?.results) list = (pop.results as TMDBMovie[]);
+        }
+        if (mounted && list.length > 0) {
+          const ranked = rankCandidates(list, readHistory());
+          setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
+        }
+      } catch (e) {
+        // swallow errors for reco; do not affect rest of Trending
+      }
+    })();
+    return () => { mounted = false; };
+  }, [period, user, recoPage, recoCount]);
 
-  // Загрузка трендового контента с кэшированием
-  const fetchTrendingContent = useCallback(async () => {
-    if (!isMounted.current) return;
-    
+  // Recalculate recoCount when localStorage history changes (e.g., cleared in Settings)
+  useEffect(() => {
+    const recompute = async () => {
+      const h = readHistory();
+      const totalEvents = (h.events || []).length;
+      const desired = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
+      setRecoCount(desired);
+      const top = getTopGenresFromHistory();
+      const genreParam = top.slice(0, 3).join(',');
+      const endpoint = genreParam
+        ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
+        : `movie/popular?page=${recoPage}`;
+      const cached = readCached(endpoint);
+      if (cached?.results) {
+        const ranked = rankCandidates((cached.results as TMDBMovie[]), readHistory());
+        setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
+      }
+      const data = await fetchFromTMDB(endpoint);
+      let list: TMDBMovie[] = [];
+      if (data?.results) list = (data.results as TMDBMovie[]);
+      if (list.length === 0) {
+        const pop = await fetchFromTMDB(`movie/popular?page=${recoPage}`);
+        if (pop?.results) list = (pop.results as TMDBMovie[]);
+      }
+      if (list.length > 0) {
+        const ranked = rankCandidates(list, readHistory());
+        setRecoMovies((ranked as TMDBMovie[]).slice(0, Math.max(6, Math.min(24, desired))));
+      }
+    };
+    const onStorage = () => { recompute(); };
+    const onCustom = () => { recompute(); };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('cinepulse_history_changed', onCustom as EventListener);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('cinepulse_history_changed', onCustom as EventListener);
+    };
+  }, [recoPage]);
+
+  const fetchFromTMDB = async (endpoint: string, opts?: { retries?: number; timeoutMs?: number }) => {
+    const retries = opts?.retries ?? 1;
+    const timeoutMs = opts?.timeoutMs ?? 5000;
+    const invoke = () => supabase.functions.invoke('tmdb-movies', { body: { endpoint } });
+
+    const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
+      new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('Request timeout')), timeoutMs);
+        p.then((v) => { clearTimeout(t); resolve(v); })
+         .catch((e) => { clearTimeout(t); reject(e); });
+      });
+
+    let lastErr: any = null;
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const { data, error } = await withTimeout(invoke());
+        if ((error as any)) throw error;
+        try { writeCached(endpoint, data); } catch {}
+        return data as any;
+      } catch (e) {
+        lastErr = e;
+        await new Promise(r => setTimeout(r, 300 * (i + 1)));
+      }
+    }
+    console.error('TMDB API error after retries:', lastErr);
+    return null;
+  };
+
+  const fetchTrendingContent = async () => {
     setLoading(true);
-    const cacheKey = `trending_${period}`;
     const epMovie = `trending/movie/${period}`;
     const epTV = `trending/tv/${period}`;
-    
-    // Try to get from cache first
-    const cachedData = await getFromCache(cacheKey);
-    if (cachedData && isMounted.current) {
-      setMovies(cachedData.movies || []);
-      setTvShows(cachedData.tvShows || []);
-      setLoading(false); // Don't show loading if we have cached data
-      return;
+    // Prefill from cache to avoid empty UI on slow networks
+    const cachedMovie = readCached(epMovie);
+    const cachedTV = readCached(epTV);
+    if (cachedMovie?.results && movies.length === 0) {
+      const ranked = rankCandidates((cachedMovie.results as TMDBMovie[]), readHistory());
+      setMovies(ranked as TMDBMovie[]);
     }
-    
-    try {
-      const [moviesData, tvData] = await Promise.all([
-        fetchFromTMDB(epMovie),
-        fetchFromTMDB(epTV)
-      ]);
-      
-      if (isMounted.current) {
-        if (moviesData?.results) {
-          const ranked = rankCandidates(
-            moviesData.results.map(m => ({
-              ...m,
-              title: m.title || m.name || 'Untitled',
-              release_date: m.release_date || m.first_air_date || ''
-            })),
-            readHistory()
-          ) as TMDBMovie[];
-          setMovies(ranked);
-          
-          // Save to cache
-          await saveToCache(cacheKey, {
-            movies: ranked,
-            tvShows: tvData?.results || []
-          });
-        }
-        
-        if (tvData?.results) {
-          const ranked = rankCandidates(
-            tvData.results.map(m => ({
-              ...m,
-              title: m.title || m.name || 'Untitled',
-              release_date: m.release_date || m.first_air_date || ''
-            })),
-            readHistory()
-          ) as TMDBMovie[];
-          setTvShows(ranked);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching trending content:', error);
-      if (isMounted.current) {
-        toast({
-          title: 'Error',
-          description: 'Failed to load trending content. Please try again later.',
-          variant: 'destructive'
-        });
-      }
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
-      }
+    if (cachedTV?.results && tvShows.length === 0) {
+      const raw = (cachedTV.results || []) as any[];
+      const normalized = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+      const ranked = rankCandidates(normalized, readHistory());
+      setTvShows(ranked as TMDBMovie[]);
     }
-  }, [period, toast]);
 
-  const handlePlayMovie = async (movieId: number, movieTitle: string) => {
-    if (!isMounted.current) return;
-    
+    const [moviesData, tvData] = await Promise.all([
+      fetchFromTMDB(epMovie),
+      fetchFromTMDB(epTV)
+    ]);
+
+    let movieList: TMDBMovie[] = [];
+    let tvList: TMDBMovie[] = [];
+    if (moviesData?.results) movieList = (moviesData.results || []) as TMDBMovie[];
+    if (tvData?.results) {
+      const raw = (tvData.results || []) as any[];
+      tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+    }
+
+    // Fallback chain if trending fails: popular -> trending/week -> discover by popularity
+    if (movieList.length === 0) {
+      const pop = await fetchFromTMDB('movie/popular?page=1');
+      if (pop?.results) movieList = (pop.results as TMDBMovie[]);
+    }
+    if (tvList.length === 0) {
+      const pop = await fetchFromTMDB('tv/popular?page=1');
+      if (pop?.results) {
+        const raw = (pop.results || []) as any[];
+        tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+      }
+    }
+    if (movieList.length === 0) {
+      const week = await fetchFromTMDB('trending/movie/week');
+      if (week?.results) movieList = (week.results as TMDBMovie[]);
+    }
+    if (tvList.length === 0) {
+      const week = await fetchFromTMDB('trending/tv/week');
+      if (week?.results) {
+        const raw = (week.results || []) as any[];
+        tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+      }
+    }
+    if (movieList.length === 0) {
+      const disc = await fetchFromTMDB('discover/movie?sort_by=popularity.desc&page=1');
+      if (disc?.results) movieList = (disc.results as TMDBMovie[]);
+    }
+    if (tvList.length === 0) {
+      const disc = await fetchFromTMDB('discover/tv?sort_by=popularity.desc&page=1');
+      if (disc?.results) {
+        const raw = (disc.results || []) as any[];
+        tvList = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+      }
+    }
+
+    // Preserve previous lists if still empty
+    if (movieList.length === 0 && movies.length > 0) {
+      // keep existing
+    } else {
+      const ranked = rankCandidates(movieList, readHistory());
+      setMovies(ranked as TMDBMovie[]);
+    }
+    if (tvList.length === 0 && tvShows.length > 0) {
+      // keep existing
+    } else {
+      const ranked = rankCandidates(tvList, readHistory());
+      setTvShows(ranked as TMDBMovie[]);
+    }
+
+    // Final guard: if still empty and no previous, try cached popular to avoid empty UI
+    if (movieList.length === 0 && movies.length === 0) {
+      const cached = readCached('movie/popular?page=1');
+      if (cached?.results) setMovies(rankCandidates((cached.results as TMDBMovie[]), readHistory()) as TMDBMovie[]);
+    }
+    if (tvList.length === 0 && tvShows.length === 0) {
+      const cached = readCached('tv/popular?page=1');
+      if (cached?.results) {
+        const raw = (cached.results || []) as any[];
+        const norm = raw.map((it) => ({ ...(it as any), title: (it as any).title || (it as any).name })) as TMDBMovie[];
+        setTvShows(rankCandidates(norm, readHistory()) as TMDBMovie[]);
+      }
+    }
+
+    setLoading(false);
+  };
+
+  const fetchUserPreferences = async () => {
+    if (!user) return;
+
     try {
-      setSelectedMovie({ id: movieId, title: movieTitle });
-      setVideoKey(null);
-      
-      // Log movie open
-      logMovieOpen(movieId, movieTitle);
-      
-      // Fetch video key
-      const { data } = await supabase.functions.invoke('tmdb-movies', {
-        body: { endpoint: `movie/${movieId}/videos` }
-      });
-      
-      if (isMounted.current && data?.results) {
-        const trailer = data.results.find(
-          (v: any) => v.site === 'YouTube' && v.type === 'Trailer'
-        );
-        
-        if (trailer) {
-          setVideoKey(trailer.key);
-          logTrailerPlay(movieId, movieTitle);
-        }
+      const [favoritesData, watchlistData] = await Promise.all([
+        supabase.from('user_favorites').select('movie_id').eq('user_id', user.id),
+        supabase.from('user_watchlist').select('movie_id').eq('user_id', user.id)
+      ]);
+
+      if (favoritesData.data) {
+        setFavorites(new Set(favoritesData.data.map(f => parseInt(f.movie_id))));
+      }
+
+      if (watchlistData.data) {
+        setWatchlist(new Set(watchlistData.data.map(w => parseInt(w.movie_id))));
       }
     } catch (error) {
-      console.error('Error playing movie:', error);
-      if (isMounted.current) {
-        toast({
-          title: 'Error',
-          description: 'Failed to load video. Please try again.',
-          variant: 'destructive'
-        });
-      }
-    } finally {
-      if (isMounted.current) {
-        setIsPlayerOpen(true);
-      }
+      console.error('Error fetching user preferences:', error);
     }
   };
 
-  useEffect(() => {
-    // Очистка устаревшего кэша при загрузке
-    const cleanupOldCache = async () => {
-      try {
+  const toggleFavorite = async (movieId: number) => {
+    if (!user) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in to add favorites",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const isFavorited = favorites.has(movieId);
+      
+      if (isFavorited) {
         await supabase
-          .from('tmdb_cache' as never) // Используем тип never, так как таблица не определена в генерируемых типах
+          .from('user_favorites')
           .delete()
-          .lt('expires_at', new Date().toISOString());
-      } catch (error) {
-        console.error('Ошибка при очистке устаревшего кэша:', error);
+          .eq('user_id', user.id)
+          .eq('movie_id', movieId.toString());
+        
+        setFavorites(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(movieId);
+          return newSet;
+        });
+        
+        toast({ title: "Removed from favorites" });
+      } else {
+        await supabase
+          .from('user_favorites')
+          .insert({
+            user_id: user.id,
+            movie_id: movieId.toString()
+          });
+        
+        setFavorites(prev => new Set(prev).add(movieId));
+        toast({ title: "Added to favorites" });
       }
-    };
-    
-    cleanupOldCache();
-    
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update favorites",
+        variant: "destructive"
+      });
+    }
+  };
 
-  useEffect(() => {
-    const initialize = async () => {
-      try {
-        const history = readHistory();
-        const topGenres = getTopGenresFromHistory();
-        const totalEvents = (history.events || []).length;
-        const desiredCount = Math.max(6, Math.min(24, 8 + Math.floor(totalEvents / 20) * 4));
+  const toggleWatchlist = async (movieId: number) => {
+    if (!user) {
+      toast({
+        title: "Sign in required", 
+        description: "Please sign in to add to watchlist",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const isInWatchlist = watchlist.has(movieId);
+      
+      if (isInWatchlist) {
+        await supabase
+          .from('user_watchlist')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('movie_id', movieId.toString());
         
-        if (isMounted.current && desiredCount !== recoCount) {
-          setRecoCount(desiredCount);
-        }
+        setWatchlist(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(movieId);
+          return newSet;
+        });
         
-        const genreParam = topGenres.slice(0, 3).join(',');
-        const recEndpoint = genreParam
-          ? `discover/movie?with_genres=${genreParam}&page=${recoPage}&sort_by=popularity.desc`
-          : `movie/popular?page=${recoPage}`;
-          
-        // Prefill from cache for instant recommendations
-        const cachedData = await readCached(recEndpoint);
-        if (isMounted.current && cachedData?.results && recoMovies.length === 0) {
-          const ranked = rankCandidates(
-            cachedData.results.map((m: any) => ({
-              ...m,
-              title: m.title || m.name || 'Untitled',
-              release_date: m.release_date || m.first_air_date || ''
-            })),
-            history
-          ) as TMDBMovie[];
-          
-          if (isMounted.current) {
-            setRecoMovies(ranked.slice(0, recoCount));
+        toast({ title: "Removed from watchlist" });
+      } else {
+        await supabase
+          .from('user_watchlist')
+          .insert({
+            user_id: user.id,
+            movie_id: movieId.toString()
+          });
+        
+        setWatchlist(prev => new Set(prev).add(movieId));
+        toast({ title: "Added to watchlist" });
+      }
+    } catch (error) {
+      console.error('Error toggling watchlist:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update watchlist",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const getContentGenres = (genreIds: number[]) => {
+    return genreIds.slice(0, 2).map(id => GENRE_MAP[id]).filter(Boolean);
+  };
+
+  const getTrendingIcon = (index: number) => {
+    if (index === 0) return <TrendingUp className="text-green-500" size={16} />;
+    if (index < 3) return <TrendingUp className="text-yellow-500" size={16} />;
+    return <TrendingDown className="text-red-500" size={16} />;
+  };
+
+  const handlePlayMovie = async (movieId: number, movieTitle: string) => {
+    try {
+      const genres = movies.find(m => m.id === movieId)?.genre_ids;
+      logTrailerPlay(movieId, movieTitle, genres);
+    } catch {}
+    setSelectedMovie({ title: movieTitle, id: movieId });
+    
+    // Fetch trailer from TMDB
+    const data = await fetchFromTMDB(`movie/${movieId}/videos`);
+    
+    if (data && data.results && data.results.length > 0) {
+      // Find official trailer or teaser
+      const trailer = data.results.find((video: any) => 
+        video.type === "Trailer" && video.site === "YouTube"
+      ) || data.results.find((video: any) => 
+        video.type === "Teaser" && video.site === "YouTube"
+      ) || data.results[0];
+      
+      setVideoKey(trailer?.key || null);
+    } else {
+      setVideoKey(null);
+    }
+    
+    setIsPlayerOpen(true);
+  };
+
+  const MovieCard = ({ content, index }: { content: TMDBMovie; index: number }) => (
+    <Card className="group hover:shadow-lg transition-all duration-300 overflow-hidden">
+      <div className="relative aspect-[2/3] overflow-hidden">
+        <img
+          src={content.poster_path 
+            ? `https://image.tmdb.org/t/p/w500${content.poster_path}`
+            : 'https://images.unsplash.com/photo-1489599735734-79b4169f2a78?w=500&h=750&fit=crop'
           }
-        }
-      } catch (error) {
-        console.error('Error initializing:', error);
-      }
-    };
-    initialize();
-  }, [period, currentUser, recoPage, recoCount]);
+          alt={content.title}
+          loading="lazy"
+          decoding="async"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        />
+        
+        {/* Ranking Badge */}
+        <div className="absolute top-2 left-2">
+          <Badge variant="secondary" className="bg-black/80 text-white font-bold">
+            #{index + 1}
+          </Badge>
+        </div>
 
-  // Toggle favorite status
-  const toggleFavorite = useCallback((movieId: number) => {
-    setFavorites(prev => {
-      const newFavorites = new Set(prev);
-      if (newFavorites.has(movieId)) {
-        newFavorites.delete(movieId);
-      } else {
-        newFavorites.add(movieId);
-      }
-      return newFavorites;
-    });
-  }, []);
-  
-  // Toggle watchlist status
-  const toggleWatchlist = useCallback((movieId: number) => {
-    setWatchlist(prev => {
-      const newWatchlist = new Set(prev);
-      if (newWatchlist.has(movieId)) {
-        newWatchlist.delete(movieId);
-      } else {
-        newWatchlist.add(movieId);
-      }
-      return newWatchlist;
-    });
-  }, []);
+        {/* Rating Badge */}
+        <div className="absolute top-2 right-2">
+          <Badge variant="secondary" className="bg-black/80 text-white">
+            <Star size={12} className="mr-1 fill-current text-yellow-500" />
+            {content.vote_average.toFixed(1)}
+          </Badge>
+        </div>
+
+        {/* Overlay Actions */}
+        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          <div className="flex gap-2">
+            <Button 
+              size="icon" 
+              variant="secondary"
+              onClick={() => handlePlayMovie(content.id, content.title)}
+              title="Play Trailer"
+            >
+              <Play size={16} />
+            </Button>
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={() => { try { logExternalSearch(content.title, content.id); } catch {}; window.open(`https://www.google.com/search?q=${encodeURIComponent(`Watch ${content.title} full movie`)}`,'_blank'); }}
+              title="Watch Full Movie"
+            >
+              <Globe size={16} />
+            </Button>
+            <Button 
+              size="icon" 
+              variant={favorites.has(content.id) ? "default" : "secondary"}
+              onClick={() => toggleFavorite(content.id)}
+              title="Add to Favorites"
+            >
+              <Heart size={16} className={favorites.has(content.id) ? "fill-current" : ""} />
+            </Button>
+            <Button 
+              size="icon" 
+              variant={watchlist.has(content.id) ? "default" : "secondary"}
+              onClick={() => toggleWatchlist(content.id)}
+              title="Add to Watchlist"
+            >
+              <Bookmark size={16} className={watchlist.has(content.id) ? "fill-current" : ""} />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between mb-2">
+          <h3 className="font-semibold line-clamp-2 flex-1">{content.title}</h3>
+          {getTrendingIcon(index)}
+        </div>
+
+        <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
+          <Calendar size={12} />
+          <span>{content.release_date?.split('-')[0] || 'N/A'}</span>
+        </div>
+
+        <div className="flex flex-wrap gap-1 mb-3">
+          {getContentGenres(content.genre_ids).map((genre) => (
+            <Badge key={genre} variant="outline" className="text-xs">
+              {genre}
+            </Badge>
+          ))}
+        </div>
+
+        <p className="text-sm text-muted-foreground line-clamp-3 mb-4">
+          {content.overview}
+        </p>
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+            <TrendingUp size={12} />
+            <span>{Math.round(content.popularity)}</span>
+          </div>
+          
+          <Button 
+            onClick={() => { try { logMovieOpen(content.id, content.title, content.genre_ids); } catch {}; navigate(`/movie/${content.id}`); }}
+            size="sm"
+          >
+            Details
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {[...Array(8)].map((_, i) => (
-            <div key={i} className="bg-gray-100 dark:bg-gray-800 rounded-lg h-64 animate-pulse"></div>
+          {[...Array(12)].map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <div className="aspect-[2/3] bg-muted rounded-t-lg"></div>
+              <CardContent className="p-4">
+                <div className="h-4 bg-muted rounded mb-2"></div>
+                <div className="h-3 bg-muted rounded mb-2"></div>
+                <div className="h-3 bg-muted rounded w-2/3"></div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       </div>
@@ -569,54 +716,8 @@ const EnhancedTrending = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {movies.map((movie) => (
-                <div key={movie.id} className="group relative overflow-hidden rounded-lg bg-white shadow-sm transition-all hover:shadow-md dark:bg-gray-800">
-                  <div className="relative aspect-[2/3] overflow-hidden">
-                    <img
-                      src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : 'https://via.placeholder.com/300x450?text=No+Image'}
-                      alt={movie.title}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
-                      <div className="flex h-full items-center justify-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="rounded-full bg-white/20 text-white hover:bg-white/30"
-                          onClick={() => handlePlayMovie(movie.id, movie.title)}
-                        >
-                          <Play className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={`rounded-full ${favorites.has(movie.id) ? 'text-red-500' : 'text-white/70'} hover:bg-white/20`}
-                          onClick={() => toggleFavorite(movie.id)}
-                        >
-                          <Heart className={`h-4 w-4 ${favorites.has(movie.id) ? 'fill-current' : ''}`} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={`rounded-full ${watchlist.has(movie.id) ? 'text-blue-500' : 'text-white/70'} hover:bg-white/20`}
-                          onClick={() => toggleWatchlist(movie.id)}
-                        >
-                          <Bookmark className={`h-4 w-4 ${watchlist.has(movie.id) ? 'fill-current' : ''}`} />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <h3 className="mb-1 line-clamp-2 text-sm font-medium">{movie.title}</h3>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{new Date(movie.release_date).getFullYear() || 'N/A'}</span>
-                      <div className="flex items-center gap-1">
-                        <Star className="h-3 w-3 text-yellow-500" />
-                        <span>{movie.vote_average?.toFixed(1) || 'N/A'}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              {movies.map((movie, index) => (
+                <MovieCard key={movie.id} content={movie} index={index} />
               ))}
             </div>
           )}
@@ -633,54 +734,8 @@ const EnhancedTrending = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {tvShows.map((show) => (
-                <div key={show.id} className="group relative overflow-hidden rounded-lg bg-white shadow-sm transition-all hover:shadow-md dark:bg-gray-800">
-                  <div className="relative aspect-[2/3] overflow-hidden">
-                    <img
-                      src={show.poster_path ? `https://image.tmdb.org/t/p/w500${show.poster_path}` : 'https://via.placeholder.com/300x450?text=No+Image'}
-                      alt={show.title}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
-                      <div className="flex h-full items-center justify-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="rounded-full bg-white/20 text-white hover:bg-white/30"
-                          onClick={() => handlePlayMovie(show.id, show.title)}
-                        >
-                          <Play className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={`rounded-full ${favorites.has(show.id) ? 'text-red-500' : 'text-white/70'} hover:bg-white/20`}
-                          onClick={() => toggleFavorite(show.id)}
-                        >
-                          <Heart className={`h-4 w-4 ${favorites.has(show.id) ? 'fill-current' : ''}`} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={`rounded-full ${watchlist.has(show.id) ? 'text-blue-500' : 'text-white/70'} hover:bg-white/20`}
-                          onClick={() => toggleWatchlist(show.id)}
-                        >
-                          <Bookmark className={`h-4 w-4 ${watchlist.has(show.id) ? 'fill-current' : ''}`} />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-4">
-                    <h3 className="mb-1 line-clamp-2 text-sm font-medium">{show.title}</h3>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{new Date(show.first_air_date || '').getFullYear() || 'N/A'}</span>
-                      <div className="flex items-center gap-1">
-                        <Star className="h-3 w-3 text-yellow-500" />
-                        <span>{show.vote_average?.toFixed(1) || 'N/A'}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              {tvShows.map((show, index) => (
+                <MovieCard key={show.id} content={show} index={index} />
               ))}
             </div>
           )}
@@ -717,9 +772,13 @@ const EnhancedTrending = () => {
       {/* Video Player Modal */}
       <VideoPlayerModal
         isOpen={isPlayerOpen}
-        onClose={() => setIsPlayerOpen(false)}
+        onClose={() => {
+          setIsPlayerOpen(false);
+          setSelectedMovie(null);
+          setVideoKey(null);
+        }}
+        movieTitle={selectedMovie?.title || ""}
         videoKey={videoKey}
-        movieTitle={selectedMovie?.title || 'Video'}
       />
     </div>
   );
