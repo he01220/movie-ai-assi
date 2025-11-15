@@ -47,6 +47,7 @@ const Profile = () => {
   const [hasMore, setHasMore] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState("");
+  const [editUsername, setEditUsername] = useState("");
   const [editBio, setEditBio] = useState("");
   
   // Constants
@@ -199,6 +200,7 @@ const Profile = () => {
 
     try {
       const displayName = editDisplayName.trim();
+      const username = editUsername.trim().toLowerCase();
       const bio = editBio.trim();
 
       if (!displayName) {
@@ -210,8 +212,37 @@ const Profile = () => {
         return;
       }
 
+      if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+        toast({
+          title: "Ошибка",
+          description: "Имя пользователя может содержать только буквы, цифры и подчеркивания",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Check if username is already taken
+      if (username !== profile.username) {
+        const { data: existingUser } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', username)
+          .neq('id', user.id)
+          .single();
+
+        if (existingUser) {
+          toast({
+            title: "Ошибка",
+            description: "Это имя пользователя уже занято",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
       const updates = {
         id: user.id,
+        username: username,
         display_name: displayName,
         bio: bio,
         updated_at: new Date().toISOString()
@@ -226,6 +257,7 @@ const Profile = () => {
       // Update local state
       setProfile(prev => ({
         ...prev!,
+        username: updates.username,
         display_name: updates.display_name,
         bio: updates.bio,
         updated_at: updates.updated_at
@@ -279,11 +311,13 @@ const Profile = () => {
     if (editing) {
       // If already in edit mode, cancel and reset to original values
       setEditDisplayName(profile?.display_name || '');
+      setEditUsername(profile?.username || '');
       setEditBio(profile?.bio || '');
       setEditing(false);
     } else {
       // Enter edit mode with current values
       setEditDisplayName(profile?.display_name || '');
+      setEditUsername(profile?.username || '');
       setEditBio(profile?.bio || '');
       setEditing(true);
     }
@@ -348,7 +382,10 @@ const Profile = () => {
                   <h1 className="text-3xl font-bold tracking-tight">
                     {profile?.display_name}
                   </h1>
-                  <p className="text-muted-foreground">@{profile?.username || 'user'}</p>
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground">@</span>
+                    <span className="text-muted-foreground">{profile?.username || 'user'}</span>
+                  </div>
                 </div>
                 <div className="flex gap-2 justify-center sm:justify-start">
                   <Button variant="outline" onClick={toggleEditMode}>
@@ -364,16 +401,34 @@ const Profile = () => {
               
               {editing ? (
                 <div className="mt-4 space-y-4">
-                  <div>
-                    <label htmlFor="displayName" className="block text-sm font-medium text-muted-foreground mb-1">
-                      Имя
-                    </label>
-                    <Input
-                      id="displayName"
-                      value={editDisplayName}
-                      onChange={(e) => setEditDisplayName(e.target.value)}
-                      className="w-full"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="displayName" className="block text-sm font-medium text-muted-foreground mb-1">
+                        Имя
+                      </label>
+                      <Input
+                        id="displayName"
+                        value={editDisplayName}
+                        onChange={(e) => setEditDisplayName(e.target.value)}
+                        className="w-full"
+                        placeholder="Ваше имя"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="username" className="block text-sm font-medium text-muted-foreground mb-1">
+                        Имя пользователя
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-muted-foreground">@</span>
+                        <Input
+                          id="username"
+                          value={editUsername}
+                          onChange={(e) => setEditUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+                          className="w-full pl-7"
+                          placeholder="username"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <label htmlFor="bio" className="block text-sm font-medium text-muted-foreground mb-1">
