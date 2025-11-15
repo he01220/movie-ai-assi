@@ -63,12 +63,17 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
               </div>
               <div className="absolute bottom-4 left-0 right-0 flex justify-center space-x-4">
                 <Button 
-                  onClick={() => handleSearchInBrowser(false)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSearchInBrowser(false);
+                  }}
                   variant="default"
-                  className="bg-red-600 hover:bg-red-700 text-white py-2 px-6 flex items-center"
+                  className="bg-red-600 hover:bg-red-700 text-white py-3 px-8 flex items-center text-lg font-semibold 
+                  shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300
+                  animate-pulse hover:animate-none opacity-90 hover:opacity-100"
                 >
-                  <Film className="w-4 h-4 mr-2" />
-                  Смотреть фильм
+                  <Film className="w-5 h-5 mr-2" />
+                  Смотреть фильм!
                 </Button>
               </div>
             </div>
