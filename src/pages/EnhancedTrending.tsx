@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TrendingUp, TrendingDown, Calendar, Star, Play, Heart, Bookmark, Clock, Globe } from "lucide-react";
+import { TrendingUp, TrendingDown, Calendar, Star, Play, Heart, Bookmark, Clock, Globe, WifiOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Database } from "@/types/supabase";
 import { useAuth } from "@/hooks/useAuth";
@@ -143,6 +143,7 @@ const EnhancedTrending = () => {
   const [tvShows, setTvShows] = useState<TMDBMovie[]>([]);
   const [period, setPeriod] = useState<'day' | 'week'>('week');
   const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [watchlist, setWatchlist] = useState<Set<number>>(new Set());
   const [selectedMovie, setSelectedMovie] = useState<{ title: string; id: number } | null>(null);
@@ -212,6 +213,18 @@ const EnhancedTrending = () => {
     }
   }, [currentUser]);
 
+  // Показать оффлайн-уведомление
+  const showOfflineNotification = useCallback(() => {
+    if (isMounted.current) {
+      toast({
+        title: 'Оффлайн режим',
+        description: 'Показываем кэшированные данные. Некоторые функции могут быть ограничены.',
+        variant: 'default',
+        duration: 5000
+      });
+    }
+  }, []);
+
   // Загрузка трендового контента с кэшированием
   const fetchTrendingContent = useCallback(async () => {
     if (!isMounted.current) return;
@@ -219,6 +232,11 @@ const EnhancedTrending = () => {
     const cacheKey = `trending_${period}`;
     const epMovie = `trending/movie/${period}`;
     const epTV = `trending/tv/${period}`;
+    
+    // Если оффлайн, показываем уведомление
+    if (isOffline) {
+      showOfflineNotification();
+    }
     
     // Show cached data immediately if available
     const showCachedData = async () => {
@@ -361,6 +379,24 @@ const EnhancedTrending = () => {
     }
   };
 
+  // Проверка состояния сети
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    
+    // Установка начального состояния
+    setIsOffline(!navigator.onLine);
+    
+    // Слушатели изменения состояния сети
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Initialize component
   useEffect(() => {
     const initialize = async () => {
@@ -445,8 +481,51 @@ const EnhancedTrending = () => {
     );
   }
 
+  // Компонент для отображения состояния загрузки/ошибки
+  const renderStatusMessage = (message: string, icon: React.ReactNode) => (
+    <div className="text-center py-12">
+      <div className="mx-auto mb-4">{icon}</div>
+      <p className="text-lg text-muted-foreground">{message}</p>
+    </div>
+  );
+
+  // Определяем, что показывать в зависимости от состояния
+  const renderContent = () => {
+    if (loading && movies.length === 0 && tvShows.length === 0) {
+      return renderStatusMessage('Загрузка рекомендаций...', <Clock className="h-12 w-12 mx-auto animate-spin" />);
+    }
+    
+    if (isOffline && movies.length === 0 && tvShows.length === 0) {
+      return renderStatusMessage(
+        'Нет кэшированных данных. Пожалуйста, подключитесь к интернету для загрузки контента.',
+        <WifiOff className="h-12 w-12 mx-auto" />
+      );
+    }
+    
+    // Return null to render the main content below
+    return null;
+  };
+
+  // Render loading or offline message if needed
+  const statusMessage = renderContent();
+  
+  // Render the main content
+  if (statusMessage) {
+    return (
+      <div className="container mx-auto px-4 py-8 mb-24">
+        {statusMessage}
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8 mb-24">
+      {isOffline && (
+        <div className="mb-4 p-3 bg-yellow-100 text-yellow-800 rounded-md text-sm flex items-center gap-2">
+          <WifiOff className="h-4 w-4" />
+          <span>Вы в оффлайн-режиме. Показываем кэшированные данные.</span>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -708,10 +787,10 @@ const EnhancedTrending = () => {
             </div>
           )}
         </TabsContent>
-      </Tabs>
+          </Tabs>
 
-      {/* Trending Stats */}
-      <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Trending Stats */}
+          <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="p-6 text-center">
           <TrendingUp className="mx-auto text-green-500 mb-2" size={32} />
           <h3 className="font-semibold mb-1">Most Popular</h3>
@@ -735,15 +814,15 @@ const EnhancedTrending = () => {
             {[...movies].sort((a, b) => new Date(b.release_date).getTime() - new Date(a.release_date).getTime())[0]?.title || 'Loading...'}
           </p>
         </Card>
-      </div>
+          </div>
 
-      {/* Video Player Modal */}
-      <VideoPlayerModal
+          {/* Video Player Modal */}
+          <VideoPlayerModal
         isOpen={isPlayerOpen}
         onClose={() => setIsPlayerOpen(false)}
         videoKey={videoKey}
         movieTitle={selectedMovie?.title || 'Video'}
-      />
+          />
     </div>
   );
 };
