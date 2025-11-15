@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Calendar, Clock, Heart, Bookmark, Play, Star, Film, Tv, TrendingUp } from "lucide-react";
+import { Calendar, Clock, Heart, Bookmark, Play, Star, Film, Tv, TrendingUp, Image as ImageIcon } from "lucide-react";
 import VideoPlayerModal from "@/components/VideoPlayerModal";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -92,11 +92,26 @@ const MovieCard: React.FC<MovieCardProps> = ({
   <div className="px-2 py-1 h-full">
     <Card className="h-full overflow-hidden transition-transform hover:scale-105 flex flex-col">
       <div className="relative flex-1 flex flex-col">
-        <img
-          src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : '/placeholder.svg'}
-          alt={movie.title}
-          className="w-full h-64 object-cover"
-        />
+        <div className="w-full h-64 bg-gray-200 dark:bg-gray-800 flex items-center justify-center overflow-hidden">
+          {movie.poster_path ? (
+            <img
+              src={`https://image.tmdb.org/t/p/w500${movie.poster_path}`}
+              alt={movie.title || movie.name || 'Movie poster'}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.onerror = null;
+                target.src = '/placeholder.svg';
+              }}
+              loading="lazy"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center p-4 text-center text-gray-500 dark:text-gray-400">
+              <ImageIcon className="h-12 w-12 mb-2 opacity-50" />
+              <span className="text-sm">No poster available</span>
+            </div>
+          )}
+        </div>
         <div className="absolute top-2 right-2 flex gap-2">
           <Button
             variant="ghost"
@@ -288,14 +303,35 @@ const EnhancedTrending = () => {
   const fetchRecommendations = useCallback(async () => {
     const fetchWithFallback = async (url: string) => {
       try {
+        console.log('Fetching from:', url);
         const response = await fetch(url);
-        if (!response.ok) throw new Error('Network response was not ok');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
+        console.log('Fetched data from', url, ':', data.results?.length || 0, 'items');
         return data.results || [];
       } catch (error) {
         console.error(`Failed to fetch from ${url}:`, error);
         return [];
       }
+    };
+
+    // Helper to normalize movie data
+    const normalizeMovie = (item: any): TMDBMovie | null => {
+      if (!item || !item.id) return null;
+      
+      return {
+        id: item.id,
+        title: item.title || item.name || 'Unknown Title',
+        overview: item.overview || '',
+        poster_path: item.poster_path || null,
+        backdrop_path: item.backdrop_path || null,
+        release_date: item.release_date || item.first_air_date || '',
+        vote_average: item.vote_average || 0,
+        vote_count: item.vote_count || 0,
+        genre_ids: item.genre_ids || [],
+        media_type: item.media_type || (item.title ? 'movie' : 'tv'),
+        popularity: item.popularity || 0
+      };
     };
 
     try {
@@ -310,10 +346,13 @@ const EnhancedTrending = () => {
       
       // For non-logged in users or if we can't get user data
       if (!user?.id) {
+        console.log('No user ID, showing default recommendations');
         const combined = [
-          ...(popularMovies || []),
-          ...(trendingContent || [])
+          ...(popularMovies || []).map(normalizeMovie).filter(Boolean),
+          ...(trendingContent || []).map(normalizeMovie).filter(Boolean)
         ];
+        
+        console.log('Combined movies before filtering:', combined.length);
         
         const uniqueMovies = Array.from(
           new Map(
@@ -321,12 +360,15 @@ const EnhancedTrending = () => {
               .filter(movie => movie && movie.id && movie.poster_path)
               .map(movie => [movie.id, movie])
           ).values()
-        );
+        ) as TMDBMovie[];
+        
+        console.log('Unique movies after filtering:', uniqueMovies.length);
         
         const shuffled = uniqueMovies
           .sort(() => 0.5 - Math.random())
           .slice(0, 20);
         
+        console.log('Final movies to show:', shuffled.length);
         setRecommendedMovies(shuffled);
         setActiveTab('recommendations');
         return;
@@ -334,6 +376,8 @@ const EnhancedTrending = () => {
       
       // For logged-in users, try to get personalized recommendations
       try {
+        console.log('User is logged in, fetching personalized recommendations');
+        
         // Get user's watch history
         const { data: watchHistory = [] } = await (supabase as any)
           .from('watch_history')
@@ -341,29 +385,38 @@ const EnhancedTrending = () => {
           .eq('user_id', user.id)
           .order('watched_at', { ascending: false })
           .limit(10)
-          .catch(() => ({ data: [] }));
+          .catch((error: any) => {
+            console.error('Error fetching watch history:', error);
+            return { data: [] };
+          });
+        
+        console.log('User watch history:', watchHistory);
         
         let recommended = [];
         
         if (watchHistory.length > 0) {
+          console.log('Found watch history, fetching similar movies');
           // Get similar movies for watched content
           const similarPromises = watchHistory.slice(0, 3).map(entry => 
             fetchWithFallback(`https://api.themoviedb.org/3/movie/${entry.movie_id}/similar?api_key=${import.meta.env.VITE_TMDB_API_KEY}&language=ru-RU&page=1`)
           );
           
           const similarResults = await Promise.all(similarPromises);
-          const similarMovies = similarResults.flat();
+          const similarMovies = similarResults.flat().map(normalizeMovie).filter(Boolean);
+          
+          console.log('Found similar movies:', similarMovies.length);
           
           recommended = [
             ...similarMovies,
-            ...popularMovies,
-            ...trendingContent
+            ...(popularMovies || []).map(normalizeMovie).filter(Boolean),
+            ...(trendingContent || []).map(normalizeMovie).filter(Boolean)
           ];
         } else {
+          console.log('No watch history, showing popular and trending');
           // For new users, show a mix of popular and trending
           recommended = [
-            ...popularMovies.slice(0, 15),
-            ...trendingContent.slice(0, 15)
+            ...(popularMovies || []).slice(0, 15).map(normalizeMovie).filter(Boolean),
+            ...(trendingContent || []).slice(0, 15).map(normalizeMovie).filter(Boolean)
           ];
         }
         
