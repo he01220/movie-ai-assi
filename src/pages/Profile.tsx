@@ -1,59 +1,61 @@
-import { useState, useEffect } from "react";
-import { User, Settings, LogOut, Edit, Bookmark, Star, Calendar } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { LogOut, Edit, Bookmark, Star, Calendar, Plus, Film } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { Card, CardContent } from "../components/ui/card";
-import { Badge } from "../components/ui/badge";
+import { Input } from "../components/ui/input";
+import { Textarea } from "../components/ui/textarea";
 import { useToast } from "../hooks/use-toast";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { Skeleton } from "../components/ui/skeleton";
+
+interface Movie {
+  id: number;
+  title: string;
+  poster_path: string | null;
+  vote_average: number;
+  release_date: string;
+  [key: string]: any;
+}
 
 interface UserProfile {
   id: string;
-  username: string | null;
-  display_name: string | null;
-  avatar_url: string | null;
-  bio: string | null;
-  created_at: string;
-  language: string | null;
-  preferred_language: string | null;
-  updated_at: string;
-}
-
-// Removed UserVideo interface as 'Your Videos' section is deleted
-
-interface WatchlistMovie {
-  id: string;
-  movie_id: string;
-  created_at: string;
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  bio?: string | null;
+  created_at?: string;
+  language?: string | null;
+  preferred_language?: string | null;
+  updated_at?: string;
 }
 
 const Profile = () => {
+  // Hooks
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   
+  // State
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [watchlistMovies, setWatchlistMovies] = useState<any[]>([]);
+  const [watchlistMovies, setWatchlistMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editBio, setEditBio] = useState("");
+  
+  // Constants
+  const PAGE_SIZE = 8;
 
-  useEffect(() => {
-    if (!user) {
-      navigate('/auth');
-      return;
-    }
-    
-    fetchUserProfile();
-    fetchWatchlist();
-  }, [user, navigate]);
-
-  const fetchUserProfile = async () => {
+  // Fetch user profile
+  const fetchUserProfile = useCallback(async () => {
     if (!user) return;
-
+    
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -62,84 +64,90 @@ const Profile = () => {
         .single();
 
       if (error) throw error;
-      setProfile(data as UserProfile);
+      
+      const profileData = data as Partial<UserProfile>;
+      const emailPrefix = user.email?.split('@')[0] || 'user';
+      
+      const safeProfile: UserProfile = {
+        id: profileData.id || user.id,
+        username: profileData.username || emailPrefix,
+        display_name: profileData.display_name || profileData.username || emailPrefix,
+        avatar_url: profileData.avatar_url || null,
+        bio: profileData.bio || '',
+        created_at: profileData.created_at || new Date().toISOString(),
+        language: profileData.language || 'en',
+        preferred_language: profileData.preferred_language || 'en',
+        updated_at: profileData.updated_at || new Date().toISOString()
+      };
+      
+      setProfile(safeProfile);
+      setEditDisplayName(safeProfile.display_name || '');
+      setEditBio(safeProfile.bio || '');
     } catch (error) {
       console.error('Error fetching profile:', error);
       toast({
-        title: "Error loading profile",
-        description: "Could not load your profile data",
+        title: "Ошибка",
+        description: "Не удалось загрузить профиль",
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [user, toast]);
 
-  const startEditing = () => {
-    if (!profile) return;
-    setEditDisplayName(profile.display_name || profile.username || "");
-    setEditBio(profile.bio || "");
-    setEditing(true);
-  };
-
-  const cancelEditing = () => {
-    setEditing(false);
-  };
-
-  const saveProfileEdits = async () => {
-    if (!user) return;
-    try {
-      const updates: Partial<UserProfile> = {
-        display_name: editDisplayName || null,
-        bio: editBio || null,
-      };
-      const { error } = await supabase
-        .from('profiles')
-        .update(updates)
-        .eq('id', user.id);
-      if (error) throw error;
-      setProfile((prev) => prev ? { ...prev, ...updates, updated_at: new Date().toISOString() } as UserProfile : prev);
-      setEditing(false);
-      toast({ title: 'Profile updated' });
-    } catch (e) {
-      toast({ title: 'Failed to update profile', variant: 'destructive' });
-    }
-  };
-
-  
-
-  const fetchWatchlist = async () => {
+  // Fetch watchlist with pagination
+  const fetchWatchlist = useCallback(async (loadMore = false) => {
     if (!user) return;
     
     try {
-      // Get all movie IDs from watchlist
-      const { data: watchlistData, error } = await supabase
+      const currentPage = loadMore ? page + 1 : 1;
+      
+      if (!loadMore) {
+        setLoading(true);
+        setWatchlistMovies([]);
+      } else {
+        setLoadingMore(true);
+      }
+
+      // Get paginated movie IDs from watchlist
+      const { data: watchlistData, error, count } = await supabase
         .from('user_watchlist')
-        .select('movie_id')
-        .eq('user_id', user.id);
+        .select('movie_id', { count: 'exact' })
+        .eq('user_id', user.id)
+        .range((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE - 1);
 
       if (error) throw error;
+
+      // Check if there are more movies to load
+      const totalCount = count || 0;
+      setHasMore(currentPage * PAGE_SIZE < totalCount);
+      
+      if (loadMore) {
+        setPage(currentPage);
+      }
 
       // If there are movies, fetch their details in a batch
       if (watchlistData?.length > 0) {
         const movieIds = watchlistData.map(item => item.movie_id).join(',');
         
-        // Single API call for all movies
+        // Single API call for movies on the current page
         const { data } = await supabase.functions.invoke('tmdb-movies', {
           body: { 
             endpoint: 'discover/movie',
             params: {
               with_ids: movieIds,
               page: 1,
-              sort_by: 'popularity.desc'
+              sort_by: 'popularity.desc',
+              language: 'ru-RU'
             }
           }
         });
 
         if (data?.results) {
-          setWatchlistMovies(data.results);
+          setWatchlistMovies(prev => loadMore 
+            ? [...prev, ...data.results]
+            : data.results
+          );
         }
-      } else {
+      } else if (!loadMore) {
         setWatchlistMovies([]);
       }
     } catch (error) {
@@ -149,10 +157,14 @@ const Profile = () => {
         description: "Не удалось загрузить список ожидания",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, [user, page, toast]);
 
-  const removeFromWatchlist = async (movieId: string) => {
+  // Remove movie from watchlist
+  const removeFromWatchlist = async (movieId: number) => {
     if (!user) return;
 
     try {
@@ -160,212 +172,274 @@ const Profile = () => {
         .from('user_watchlist')
         .delete()
         .eq('user_id', user.id)
-        .eq('movie_id', movieId);
+        .eq('movie_id', movieId.toString());
 
       if (error) throw error;
 
-      setWatchlistMovies(prev => prev.filter(movie => movie.id.toString() !== movieId));
+      // Update local state
+      setWatchlistMovies(prev => prev.filter(movie => movie.id !== movieId));
+      
       toast({
-        title: "Removed from watchlist",
-        description: "Movie has been removed from your watchlist",
+        title: "Успех",
+        description: "Фильм удален из списка ожидания",
       });
     } catch (error) {
+      console.error('Error removing from watchlist:', error);
       toast({
-        title: "Error",
-        description: "Failed to remove from watchlist",
+        title: "Ошибка",
+        description: "Не удалось удалить фильм из списка ожидания",
         variant: "destructive",
       });
     }
   };
 
-  const handleLogout = async () => {
+  // Save profile changes
+  const saveProfileChanges = async () => {
+    if (!user || !profile) return;
+
     try {
-      await signOut();
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          display_name: editDisplayName,
+          bio: editBio,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setProfile(prev => prev ? {
+        ...prev,
+        display_name: editDisplayName,
+        bio: editBio
+      } : null);
+      
+      setEditing(false);
+      
       toast({
-        title: "Logged out successfully",
-        description: "See you next time!",
+        title: "Успех",
+        description: "Профиль успешно обновлен",
       });
-      navigate('/auth');
     } catch (error) {
+      console.error('Error updating profile:', error);
       toast({
-        title: "Error",
-        description: "Failed to log out",
+        title: "Ошибка",
+        description: "Не удалось обновить профиль",
         variant: "destructive",
       });
     }
   };
 
-  // Removed video delete handler as videos feature was removed
+  // Initial load
+  useEffect(() => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    
+    fetchUserProfile();
+    fetchWatchlist();
+  }, [user, navigate, fetchUserProfile, fetchWatchlist]);
 
-  if (loading) {
+  // Skeleton loader for movies
+  const renderMovieSkeletons = () => (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="space-y-2">
+          <Skeleton className="h-64 w-full rounded-lg" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      ))}
+    </div>
+  );
+
+  if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <p>Пожалуйста, войдите в систему</p>
       </div>
     );
   }
-
-  if (!profile || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Please log in to view your profile</p>
-      </div>
-    );
-  }
-
-  const displayName = profile.display_name || profile.username || user.email?.split('@')[0] || 'User';
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background">
       {/* Profile Header */}
-      <div className="bg-gradient-to-b from-primary/20 to-background p-4 sm:p-6 animate-fade-in">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex flex-col md:flex-row md:items-start items-center gap-4 md:gap-6">
-            <Avatar className="w-20 h-20 sm:w-24 sm:h-24 border-4 border-primary/30">
-              <AvatarImage src={profile.avatar_url || undefined} alt={displayName} />
-              <AvatarFallback className="text-2xl">
-                {displayName.charAt(0).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+      <div className="bg-gradient-to-r from-primary/10 to-muted/20">
+        <div className="max-w-7xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
+          <div className="flex flex-col items-center sm:flex-row gap-8">
+            <div className="relative group">
+              <Avatar className="h-32 w-32 border-4 border-background">
+                <AvatarImage src={profile?.avatar_url || ''} alt={profile?.display_name || 'User'} />
+                <AvatarFallback className="text-2xl">
+                  {profile?.display_name?.charAt(0) || 'U'}
+                </AvatarFallback>
+              </Avatar>
+              <button 
+                onClick={() => setEditing(true)}
+                className="absolute -bottom-2 -right-2 bg-primary text-primary-foreground p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Edit className="h-4 w-4" />
+              </button>
+            </div>
             
-            <div className="flex-1 w-full">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-2 text-center sm:text-left">
-                {editing ? (
-                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-                    <input
-                      className="border rounded px-3 py-2 w-full"
-                      placeholder="Display name"
-                      value={editDisplayName}
-                      onChange={(e) => setEditDisplayName(e.target.value)}
-                    />
-                    <input
-                      className="border rounded px-3 py-2 w-full"
-                      placeholder="Bio"
-                      value={editBio}
-                      onChange={(e) => setEditBio(e.target.value)}
-                    />
-                  </div>
-                ) : (
-                  <h1 className="text-2xl sm:text-3xl font-bold font-poppins break-all">@{displayName}</h1>
-                )}
-                <div className="flex items-center justify-center sm:justify-start gap-2">
-                  {editing ? (
-                    <>
-                      <Button variant="default" size="sm" onClick={saveProfileEdits} className="self-center sm:self-auto">Save</Button>
-                      <Button variant="outline" size="sm" onClick={cancelEditing} className="self-center sm:self-auto">Cancel</Button>
-                    </>
-                  ) : (
-                    <Button variant="outline" size="sm" onClick={startEditing} className="self-center sm:self-auto">
-                      <Edit size={16} className="mr-2" />
-                      Edit Profile
-                    </Button>
-                  )}
-                  <Button variant="destructive" size="sm" onClick={handleLogout} className="self-center sm:self-auto">
-                    <LogOut size={16} className="mr-2" />
-                    Logout
+            <div className="flex-1 text-center sm:text-left">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h1 className="text-3xl font-bold tracking-tight">
+                    {profile?.display_name}
+                  </h1>
+                  <p className="text-muted-foreground">@{profile?.username || 'user'}</p>
+                </div>
+                <div className="flex gap-2 justify-center sm:justify-start">
+                  <Button variant="outline" onClick={() => setEditing(true)}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    Редактировать
+                  </Button>
+                  <Button variant="outline" onClick={signOut}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Выйти
                   </Button>
                 </div>
               </div>
               
-              {!editing && (
-                <p className="text-muted-foreground mb-4 text-center sm:text-left">{profile.bio || "No bio yet"}</p>
+              {profile?.bio && (
+                <p className="mt-4 text-muted-foreground">
+                  {profile.bio}
+                </p>
               )}
               
-              <div className="flex items-center justify-center sm:justify-start gap-6 text-sm">
-                <div>
-                  <span className="text-muted-foreground">
-                    Joined {new Date(profile.created_at).toLocaleDateString()}
+              <div className="mt-6 flex flex-wrap gap-4 justify-center sm:justify-start">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    На сайте с {new Date(profile?.created_at || '').toLocaleDateString('ru-RU')}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Bookmark className="h-5 w-5 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    {watchlistMovies.length} в списке ожидания
                   </span>
                 </div>
               </div>
             </div>
-            
-            <div className="flex md:flex-col gap-2 w-full md:w-auto justify-center md:justify-start">
-              <Button variant="outline" size="sm" onClick={() => navigate('/settings')} className="w-full md:w-auto">
-                <Settings size={16} className="mr-2" />
-                Settings
-              </Button>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Watchlist Section */}
-      <div className="p-4 sm:p-6 bg-muted/30">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-3 mb-6">
-            <Bookmark className="text-primary" size={24} />
-            <h2 className="text-2xl font-bold">My Watchlist</h2>
+      {/* Main Content */}
+      <div className="py-12 bg-background">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              <Bookmark className="h-6 w-6 text-primary" />
+              Мой список ожидания
+            </h2>
+            <Button variant="outline" onClick={() => navigate('/movies')}>
+              <Plus className="mr-2 h-4 w-4" />
+              Добавить фильмы
+            </Button>
           </div>
           
-          {watchlistMovies.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-              {watchlistMovies.map((movie, index) => (
-                <Card 
-                  key={movie.id} 
-                  className="group hover:shadow-lg transition-shadow overflow-hidden animate-scale-in"
-                  style={{ animationDelay: `${index * 0.1}s` }}
-                >
-                  <div className="relative aspect-[2/3] overflow-hidden">
-                    <img
-                      src={movie.poster_path 
-                        ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-                        : 'https://images.unsplash.com/photo-1489599735734-79b4169f2a78?w=500&h=750&fit=crop'
-                      }
-                      alt={movie.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-4">
-                      <div className="flex gap-2 flex-col sm:flex-row w-full max-w-xs">
-                        <Button 
-                          size="sm" 
-                          variant="secondary"
-                          onClick={() => navigate(`/movie/${movie.id}`)}
-                          className="w-full sm:w-auto"
-                        >
-                          View Details
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="destructive"
-                          onClick={() => removeFromWatchlist(movie.id.toString())}
-                          className="w-full sm:w-auto"
-                        >
-                          Remove
-                        </Button>
+          {loading ? (
+            renderMovieSkeletons()
+          ) : watchlistMovies.length > 0 ? (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                {watchlistMovies.map((movie) => (
+                  <div key={movie.id} className="group relative">
+                    <Card className="h-full overflow-hidden transition-transform duration-200 hover:shadow-lg">
+                      <div 
+                        className="aspect-[2/3] bg-cover bg-center cursor-pointer"
+                        style={{ 
+                          backgroundImage: movie.poster_path 
+                            ? `url(https://image.tmdb.org/t/p/w500${movie.poster_path})` 
+                            : 'linear-gradient(to bottom, #f3f4f6, #e5e7eb)'
+                        }}
+                        onClick={() => navigate(`/movie/${movie.id}`)}
+                      >
+                        {!movie.poster_path && (
+                          <div className="h-full flex items-center justify-center bg-muted/50">
+                            <Film className="h-12 w-12 text-muted-foreground/30" />
+                          </div>
+                        )}
                       </div>
-                    </div>
-
-                    <div className="absolute top-2 right-2">
-                      <Badge variant="secondary" className="bg-black/70 text-white">
-                        <Star size={12} className="mr-1 fill-current text-yellow-500" />
-                        {movie.vote_average?.toFixed(1) || 'N/A'}
-                      </Badge>
-                    </div>
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium truncate" title={movie.title}>
+                              {movie.title}
+                            </h3>
+                            {movie.release_date && (
+                              <p className="text-sm text-muted-foreground">
+                                {new Date(movie.release_date).getFullYear()}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 ml-2">
+                            <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                            <span className="text-sm font-medium">
+                              {movie.vote_average?.toFixed(1) || 'N/A'}
+                            </span>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="w-full mt-3"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeFromWatchlist(movie.id);
+                          }}
+                        >
+                          Удалить
+                        </Button>
+                      </CardContent>
+                    </Card>
                   </div>
-
-                  <CardContent className="p-4">
-                    <h3 className="font-semibold mb-2 line-clamp-2">{movie.title}</h3>
-                    
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar size={12} />
-                      <span>{movie.release_date?.split('-')[0] || 'N/A'}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                ))}
+              </div>
+              
+              {hasMore && (
+                <div className="mt-8 text-center">
+                  <Button 
+                    onClick={() => fetchWatchlist(true)}
+                    disabled={loadingMore}
+                    variant="outline"
+                    className="min-w-[150px]"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Загрузка...
+                      </>
+                    ) : (
+                      'Загрузить еще'
+                    )}
+                  </Button>
+                </div>
+              )}
+            </>
           ) : (
-            <div className="text-center py-12">
-              <Bookmark className="mx-auto mb-4 text-muted-foreground" size={48} />
-              <p className="text-muted-foreground">Your watchlist is empty. Start adding movies!</p>
+            <div className="text-center py-12 border rounded-lg">
+              <Bookmark className="mx-auto h-12 w-12 text-muted-foreground/30 mb-4" />
+              <h3 className="text-lg font-medium text-muted-foreground">Список ожидания пуст</h3>
+              <p className="text-sm text-muted-foreground mt-2">
+                Добавьте фильмы, чтобы они отображались здесь
+              </p>
+              <Button className="mt-4" onClick={() => navigate('/movies')}>
+                Найти фильмы
+              </Button>
             </div>
           )}
         </div>
       </div>
-
-      {/* Your Videos section removed as requested */}
     </div>
   );
 };
