@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TrendingUp, TrendingDown, Calendar, Star, Play, Heart, Bookmark, Clock, Globe, WifiOff } from "lucide-react";
+import { TrendingUp, TrendingDown, Calendar, Star, Play, Heart, Bookmark, Clock, Globe } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Database } from "@/types/supabase";
 import { useAuth } from "@/hooks/useAuth";
@@ -143,7 +143,6 @@ const EnhancedTrending = () => {
   const [tvShows, setTvShows] = useState<TMDBMovie[]>([]);
   const [period, setPeriod] = useState<'day' | 'week'>('week');
   const [loading, setLoading] = useState(true);
-  const [isOffline, setIsOffline] = useState(false);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [watchlist, setWatchlist] = useState<Set<number>>(new Set());
   const [selectedMovie, setSelectedMovie] = useState<{ title: string; id: number } | null>(null);
@@ -213,80 +212,22 @@ const EnhancedTrending = () => {
     }
   }, [currentUser]);
 
-  // Показать оффлайн-уведомление
-  const showOfflineNotification = useCallback(() => {
-    if (isMounted.current) {
-      toast({
-        title: 'Оффлайн режим',
-        description: 'Показываем кэшированные данные. Некоторые функции могут быть ограничены.',
-        variant: 'default',
-        duration: 5000
-      });
-    }
-  }, []);
-
   // Загрузка трендового контента с кэшированием
   const fetchTrendingContent = useCallback(async () => {
     if (!isMounted.current) return;
     
+    setLoading(true);
     const cacheKey = `trending_${period}`;
     const epMovie = `trending/movie/${period}`;
     const epTV = `trending/tv/${period}`;
     
-    // Если оффлайн, показываем уведомление
-    if (isOffline) {
-      showOfflineNotification();
-    }
-    
-    // Show cached data immediately if available
-    const showCachedData = async () => {
-      const cachedData = await getFromCache(cacheKey);
-      if (cachedData && isMounted.current) {
-        setMovies(cachedData.movies || []);
-        setTvShows(cachedData.tvShows || []);
-        return true;
-      }
-      return false;
-    };
-    
-    // Start loading fresh data in the background
-    const loadFreshData = async () => {
-      setLoading(true);
-      try {
-        const [moviesData, tvData] = await Promise.all([
-          fetchFromTMDB(epMovie),
-          fetchFromTMDB(epTV)
-        ]);
-        
-        if (isMounted.current) {
-          const newMovies = moviesData?.results || [];
-          const newTvShows = tvData?.results || [];
-          
-          if (newMovies.length > 0 || newTvShows.length > 0) {
-            setMovies(newMovies);
-            setTvShows(newTvShows);
-            await saveToCache(cacheKey, {
-              movies: newMovies,
-              tvShows: newTvShows
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error loading fresh data:', error);
-      } finally {
-        if (isMounted.current) {
-          setLoading(false);
-        }
-      }
-    };
-    
-    // Try to show cached data first, then load fresh data
-    const hasCachedData = await showCachedData();
-    loadFreshData(); // Don't await this, let it run in background
-    
-    // If no cached data, show loading state
-    if (!hasCachedData) {
-      setLoading(true);
+    // Try to get from cache first
+    const cachedData = await getFromCache(cacheKey);
+    if (cachedData && isMounted.current) {
+      setMovies(cachedData.movies || []);
+      setTvShows(cachedData.tvShows || []);
+      setLoading(false); // Don't show loading if we have cached data
+      return;
     }
     
     try {
@@ -376,28 +317,33 @@ const EnhancedTrending = () => {
           variant: 'destructive'
         });
       }
+    } finally {
+      if (isMounted.current) {
+        setIsPlayerOpen(true);
+      }
     }
   };
 
-  // Проверка состояния сети
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
+    // Очистка устаревшего кэша при загрузке
+    const cleanupOldCache = async () => {
+      try {
+        await supabase
+          .from('tmdb_cache' as never) // Используем тип never, так как таблица не определена в генерируемых типах
+          .delete()
+          .lt('expires_at', new Date().toISOString());
+      } catch (error) {
+        console.error('Ошибка при очистке устаревшего кэша:', error);
+      }
+    };
     
-    // Установка начального состояния
-    setIsOffline(!navigator.onLine);
-    
-    // Слушатели изменения состояния сети
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    cleanupOldCache();
     
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      isMounted.current = false;
     };
   }, []);
 
-  // Initialize component
   useEffect(() => {
     const initialize = async () => {
       try {
@@ -436,12 +382,7 @@ const EnhancedTrending = () => {
       }
     };
     initialize();
-    
-    // Cleanup function
-    return () => {
-      isMounted.current = false;
-    };
-  }, [period, currentUser, recoPage, recoCount, fetchTrendingContent]);
+  }, [period, currentUser, recoPage, recoCount]);
 
   // Toggle favorite status
   const toggleFavorite = useCallback((movieId: number) => {
@@ -481,60 +422,8 @@ const EnhancedTrending = () => {
     );
   }
 
-  // Компонент для отображения состояния загрузки/ошибки
-  const renderStatusMessage = (message: string, icon: React.ReactNode) => (
-    <div className="text-center py-12">
-      <div className="mx-auto mb-4">{icon}</div>
-      <p className="text-lg text-muted-foreground">{message}</p>
-    </div>
-  );
-
-  // Определяем, что показывать в зависимости от состояния
-  const renderContent = () => {
-    // Если загрузка и нет данных
-    if (loading && movies.length === 0 && tvShows.length === 0) {
-      return renderStatusMessage('Загрузка рекомендаций...', <Clock className="h-12 w-12 mx-auto animate-spin" />);
-    }
-    
-    // Если оффлайн и нет кэшированных данных
-    if (isOffline && movies.length === 0 && tvShows.length === 0) {
-      return renderStatusMessage(
-        'Нет кэшированных данных. Пожалуйста, подключитесь к интернету для загрузки контента.',
-        <WifiOff className="h-12 w-12 mx-auto" />
-      );
-    }
-    
-    // В остальных случаях показываем основной контент
-    return (
-      <>
-        {isOffline && (
-          <div className="mb-4 p-3 bg-yellow-100 text-yellow-800 rounded-md text-sm flex items-center gap-2">
-            <WifiOff className="h-4 w-4" />
-            <span>Вы в оффлайн-режиме. Показываем кэшированные данные.</span>
-          </div>
-        )}
-        {/* Остальной контент будет здесь */}
-      </>
-    );
-  };
-
-  // Получаем контент для отображения
-  const content = renderContent();
-
-  // Render the main content
-  if (content) {
-    return <div className="container mx-auto px-4 py-8 mb-24">{content}</div>;
-  }
-
-  // Main content when not showing loading/offline messages
   return (
     <div className="container mx-auto px-4 py-8 mb-24">
-      {isOffline && (
-        <div className="mb-4 p-3 bg-yellow-100 text-yellow-800 rounded-md text-sm flex items-center gap-2">
-          <WifiOff className="h-4 w-4" />
-          <span>Вы в оффлайн-режиме. Показываем кэшированные данные.</span>
-        </div>
-      )}
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -796,10 +685,10 @@ const EnhancedTrending = () => {
             </div>
           )}
         </TabsContent>
-          </Tabs>
+      </Tabs>
 
-          {/* Trending Stats */}
-          <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Trending Stats */}
+      <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="p-6 text-center">
           <TrendingUp className="mx-auto text-green-500 mb-2" size={32} />
           <h3 className="font-semibold mb-1">Most Popular</h3>
