@@ -290,10 +290,11 @@ const EnhancedTrending = () => {
       try {
         const response = await fetch(url);
         if (!response.ok) throw new Error('Network response was not ok');
-        return await response.json();
+        const data = await response.json();
+        return data.results || [];
       } catch (error) {
         console.error(`Failed to fetch from ${url}:`, error);
-        return { results: [] };
+        return [];
       }
     };
 
@@ -301,20 +302,17 @@ const EnhancedTrending = () => {
       setLoading(true);
       setError(null);
       
-      // Always show recommendations tab when fetching
-      setActiveTab('recommendations');
-      
-      // Common fetch operations
-      const [popularData, trendingData] = await Promise.all([
+      // Common fetch operations - always fetch both to have fallbacks
+      const [popularMovies, trendingContent] = await Promise.all([
         fetchWithFallback(`https://api.themoviedb.org/3/movie/popular?api_key=${import.meta.env.VITE_TMDB_API_KEY}&language=ru-RU&page=1`),
         fetchWithFallback(`https://api.themoviedb.org/3/trending/all/day?api_key=${import.meta.env.VITE_TMDB_API_KEY}&language=ru-RU`)
       ]);
       
-      // For non-logged in users, just show popular and trending
+      // For non-logged in users or if we can't get user data
       if (!user?.id) {
         const combined = [
-          ...(popularData.results || []).slice(0, 15),
-          ...(trendingData.results || []).slice(0, 15)
+          ...(popularMovies || []),
+          ...(trendingContent || [])
         ];
         
         const uniqueMovies = Array.from(
@@ -330,6 +328,7 @@ const EnhancedTrending = () => {
           .slice(0, 20);
         
         setRecommendedMovies(shuffled);
+        setActiveTab('recommendations');
         return;
       }
       
@@ -353,25 +352,25 @@ const EnhancedTrending = () => {
           );
           
           const similarResults = await Promise.all(similarPromises);
-          const similarMovies = similarResults.flatMap(data => data.results || []);
+          const similarMovies = similarResults.flat();
           
           recommended = [
             ...similarMovies,
-            ...(popularData.results || []),
-            ...(trendingData.results || [])
+            ...popularMovies,
+            ...trendingContent
           ];
         } else {
           // For new users, show a mix of popular and trending
           recommended = [
-            ...(popularData.results || []).slice(0, 15),
-            ...(trendingData.results || []).slice(0, 15)
+            ...popularMovies.slice(0, 15),
+            ...trendingContent.slice(0, 15)
           ];
         }
         
         // Filter and deduplicate
         const validMovies = recommended
           .filter(movie => movie?.id && movie.poster_path && (movie.title || movie.name))
-          .reduce((acc, movie) => {
+          .reduce((acc: any[], movie) => {
             if (!acc.some(m => m.id === movie.id)) {
               acc.push(movie);
             }
@@ -382,10 +381,10 @@ const EnhancedTrending = () => {
         setRecommendedMovies(validMovies);
       } catch (error) {
         console.error('Error in personalized recommendations:', error);
-        // Fallback to basic recommendations
+        // Fallback to basic recommendations using already fetched data
         const fallbackMovies = [
-          ...(popularData.results || []).slice(0, 10),
-          ...(trendingData.results || []).slice(0, 10)
+          ...popularMovies.slice(0, 10),
+          ...trendingContent.slice(0, 10)
         ].filter(movie => movie?.id);
         
         setRecommendedMovies(Array.from(new Map(fallbackMovies.map(m => [m.id, m])).values()));

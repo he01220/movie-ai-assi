@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
-import { Globe, Play, X } from "lucide-react";
+import { Globe, Play, X, Film } from "lucide-react";
 import { logExternalSearch } from "@/utils/history";
 import { useEffect, useState } from "react";
 
@@ -49,15 +49,29 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
               </div>
             </div>
           ) : videoKey ? (
+            <div className="absolute inset-0 flex flex-col">
+              <div className="flex-1">
             <iframe
               key={videoKey}
               src={`https://www.youtube.com/embed/${videoKey}?autoplay=1&mute=0`}
               className="absolute top-0 left-0 w-full h-full border-0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
-              title={movieTitle}
-              loading="eager"
-            />
+                title={movieTitle}
+                loading="eager"
+              />
+              </div>
+              <div className="absolute bottom-4 left-0 right-0 flex justify-center space-x-4">
+                <Button 
+                  onClick={() => handleSearchInBrowser(false)}
+                  variant="default"
+                  className="bg-red-600 hover:bg-red-700 text-white py-2 px-6 flex items-center"
+                >
+                  <Film className="w-4 h-4 mr-2" />
+                  Смотреть фильм
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-4 text-center">
               <p className="text-xl font-medium mb-2">Трейлер не найден</p>
