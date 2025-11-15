@@ -276,15 +276,41 @@ const EnhancedTrending = () => {
     if (!user) return;
     
     try {
-      // For new users, we'll show popular movies from TMDB
-      const response = await fetch(
-        `https://api.themoviedb.org/3/movie/popular?api_key=${process.env.VITE_TMDB_API_KEY}&language=en-US&page=1`
-      );
-      const data = await response.json();
+      // For new users, show a mix of popular and trending movies
+      const [popularResponse, trendingResponse, topRatedResponse] = await Promise.all([
+        fetch(
+          `https://api.themoviedb.org/3/movie/popular?api_key=${process.env.VITE_TMDB_API_KEY}&language=ru-RU&page=1`
+        ),
+        fetch(
+          `https://api.themoviedb.org/3/trending/movie/day?api_key=${process.env.VITE_TMDB_API_KEY}&language=ru-RU`
+        ),
+        fetch(
+          `https://api.themoviedb.org/3/movie/top_rated?api_key=${process.env.VITE_TMDB_API_KEY}&language=ru-RU&page=1`
+        )
+      ]);
       
-      if (data.results) {
-        setRecommendedMovies(data.results);
-      }
+      const [popularData, trendingData, topRatedData] = await Promise.all([
+        popularResponse.json(),
+        trendingResponse.json(),
+        topRatedResponse.json()
+      ]);
+      
+      // Combine and shuffle the results
+      const combined = [
+        ...(popularData.results || []).slice(0, 10),
+        ...(trendingData.results || []).slice(0, 10),
+        ...(topRatedData.results || []).slice(0, 10)
+      ];
+      
+      // Remove duplicates by ID
+      const uniqueMovies = Array.from(new Map(combined.map(movie => [movie.id, movie])).values());
+      
+      // Shuffle and take first 20
+      const shuffled = uniqueMovies
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 20);
+      
+      setRecommendedMovies(shuffled);
     } catch (error) {
       console.error('Error fetching recommendations:', error);
       // Fallback to trending movies if there's an error

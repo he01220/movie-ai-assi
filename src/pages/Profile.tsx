@@ -198,10 +198,22 @@ const Profile = () => {
     if (!user || !profile) return;
 
     try {
+      const displayName = editDisplayName.trim();
+      const bio = editBio.trim();
+
+      if (!displayName) {
+        toast({
+          title: "Ошибка",
+          description: "Имя пользователя не может быть пустым",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const updates = {
         id: user.id,
-        display_name: editDisplayName.trim(),
-        bio: editBio.trim(),
+        display_name: displayName,
+        bio: bio,
         updated_at: new Date().toISOString()
       };
 
@@ -229,7 +241,7 @@ const Profile = () => {
       console.error('Error updating profile:', error);
       toast({
         title: "Ошибка",
-        description: "Не удалось обновить профиль",
+        description: "Не удалось обновить профиль: " + (error instanceof Error ? error.message : 'Неизвестная ошибка'),
         variant: "destructive",
       });
     }
@@ -238,13 +250,26 @@ const Profile = () => {
   // Handle logout
   const handleLogout = async () => {
     try {
-      await signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      // Clear any local state if needed
+      setProfile(null);
+      setWatchlistMovies([]);
+      
+      // Navigate to auth page
       navigate('/auth');
+      
+      // Show success message
+      toast({
+        title: "Успешный выход",
+        description: "Вы успешно вышли из аккаунта",
+      });
     } catch (error) {
       console.error('Error signing out:', error);
       toast({
         title: "Ошибка",
-        description: "Не удалось выйти из аккаунта",
+        description: "Не удалось выйти из аккаунта: " + (error instanceof Error ? error.message : 'Неизвестная ошибка'),
         variant: "destructive",
       });
     }
