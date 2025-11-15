@@ -73,34 +73,48 @@ const TV_GENRES: { [key: number]: string } = {
 };
 
 const EnhancedMovies = () => {
+  // Movie data state
   const [movies, setMovies] = useState<TMDBMovie[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastAction, setLastAction] = useState<"popular" | "search">("popular");
-  const [favorites, setFavorites] = useState<Set<number>>(new Set());
-  const [watchlist, setWatchlist] = useState<Set<number>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [selectedMovie, setSelectedMovie] = useState<{ title: string; id: number } | null>(null);
-  const [videoKey, setVideoKey] = useState<string | null>(null);
-  const [isPlayerOpen, setIsPlayerOpen] = useState(false);
+
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
+  const [lastAction, setLastAction] = useState<"popular" | "search">("popular");
   const [showTop, setShowTop] = useState(false);
-  const [trailerKey, setTrailerKey] = useState<string | null>(null);
-  const [isLoadingTrailer, setIsLoadingTrailer] = useState(false);
-  const trailerCache = useRef<Record<number, string>>({});
-  const trailerLoadStartTime = useRef<number>(0);
-  // Content category selector: user must pick first
-  const [contentType, setContentType] = useState<'movie' | 'tv' | null>(null);
-  // Ratings: per-user and aggregated per content
+  const [showToGenres, setShowToGenres] = useState(false);
+
+  // User data state
+  const [favorites, setFavorites] = useState<Set<number>>(new Set());
+  const [watchlist, setWatchlist] = useState<Set<number>>(new Set());
   const [userRatings, setUserRatings] = useState<Record<number, number>>({});
   const [avgRatings, setAvgRatings] = useState<Record<number, { avg: number; count: number }>>({});
-  const [showToGenres, setShowToGenres] = useState(false);
+
+  // Video player state
+  const [selectedMovie, setSelectedMovie] = useState<{ title: string; id: number } | null>(null);
+  const [currentMovie, setCurrentMovie] = useState<{id: number, title: string} | null>(null);
+  const [videoKey, setVideoKey] = useState<string | null>(null);
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const [isPlayerOpen, setIsPlayerOpen] = useState(false);
+  const [isLoadingTrailer, setIsLoadingTrailer] = useState(false);
+  const [showNoTrailerMessage, setShowNoTrailerMessage] = useState(false);
+
+  // Content type state
+  const [contentType, setContentType] = useState<'movie' | 'tv'>('movie');
+
+  // Scroll state
   const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-  const genresRef = useRef<HTMLDivElement | null>(null);
-  
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  // Refs
+  const genresRef = useRef<HTMLDivElement>(null);
+  const trailerCache = useRef<Record<number, string>>({});
+  const trailerLoadStartTime = useRef<number>(0);
+
+  // Hooks
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -784,61 +798,32 @@ const EnhancedMovies = () => {
       // Show player immediately for better perceived performance
       setIsPlayerOpen(true);
       
-      // Define the response type for the TMDB videos endpoint
-      interface TMDBVideosResponse {
-        id: number;
-        results: Array<{
-          id: string;
-          key: string;
-          site: string;
-          type: string;
-          [key: string]: any;
-        }>;
-      }
-
-      // Получаем трейлер с таймаутом
-      const trailerPromise = supabase.functions.invoke('tmdb-movies', {
+      // Get trailer from TMDB
+      const { data, error } = await supabase.functions.invoke('tmdb-movies', {
         body: { 
           endpoint: `${contentType || 'movie'}/${id}/videos`
         }
       });
       
-      // Add a small delay to prevent flashing on fast connections
-      const timeoutPromise = new Promise<null>((resolve) => 
-        setTimeout(() => resolve(null), 200)
-      );
+      if (error) throw error;
       
-      const result = await Promise.race([trailerPromise, timeoutPromise]);
-      
-      // Если сработал таймаут, просто показываем загрузку
-      if (!result || !result.data) return;
-      
-      // Получаем данные о видео
-      const videoData = result.data as any; // Временное решение
-      const trailer = videoData.results?.find((v: any) => 
+      // Find YouTube trailer
+      const trailer = data?.results?.find((v: any) => 
         v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')
       );
 
       if (trailer) {
         trailerCache.current[id] = trailer.key;
         setTrailerKey(trailer.key);
-      } else {
-        // If no trailer found, try to search on YouTube directly
-        const searchQuery = `${title} ${contentType === 'tv' ? 'TV Show' : 'Movie'} Official Trailer`;
-        window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`, '_blank');
-        setIsPlayerOpen(false);
       }
     } catch (error) {
       console.error('Error fetching trailer:', error);
-      // Fallback to YouTube search
-      const searchQuery = `${title} ${contentType === 'tv' ? 'TV Show' : 'Movie'} Official Trailer`;
-      window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`, '_blank');
-      setIsPlayerOpen(false);
     } finally {
       setIsLoadingTrailer(false);
     }
   };
 
+  // Early return for loading state
   if (loading && movies.length === 0) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -847,41 +832,51 @@ const EnhancedMovies = () => {
             <Card key={i} className="animate-pulse">
               <div className="aspect-[2/3] bg-muted rounded-t-lg"></div>
               <CardContent className="p-4">
-                <div className="h-4 bg-muted rounded mb-2"></div>
-                <div className="h-3 bg-muted rounded mb-2"></div>
-                <div className="h-3 bg-muted rounded w-2/3"></div>
+                <div className="h-6 bg-muted rounded w-3/4 mb-2"></div>
+                <div className="h-4 bg-muted rounded w-1/2"></div>
               </CardContent>
             </Card>
           ))}
         </div>
-
-      {/* Floating Scroll Controls */}
-      {showTop && (
-        <>
-          <button
-            onClick={() => {
-              const el = document.getElementById('genres');
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }}
-            className="fixed bottom-6 right-20 h-10 w-10 rounded-full bg-secondary text-secondary-foreground shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity"
-            aria-label="Scroll to genres"
-            title="Scroll to Genres"
-          >
-            <List size={18} />
-          </button>
-          <button
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="fixed bottom-6 right-6 h-10 w-10 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity"
-            aria-label="Back to top"
-            title="Back to Top"
-          >
-            <ArrowUp size={18} />
-          </button>
-        </>
-      )}
       </div>
     );
   }
+
+  // Early return for error state
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive dark:border-destructive/50 p-4 rounded-lg">
+          <p>Error: {error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Floating scroll controls
+  const renderScrollControls = () => (
+    <div className="fixed right-6 bottom-20 flex flex-col gap-3 z-50">
+      <button
+        onClick={() => {
+          const el = document.getElementById('genres');
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+        className="h-10 w-10 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity"
+        aria-label="Scroll to Genres"
+        title="Scroll to Genres"
+      >
+        <List size={18} />
+      </button>
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        className="h-10 w-10 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity"
+        aria-label="Back to top"
+        title="Back to Top"
+      >
+        <ArrowUp size={18} />
+      </button>
+    </div>
+  );
 
   return (
     <div className="container mx-auto px-4 py-8 mb-24">
@@ -1219,6 +1214,7 @@ const EnhancedMovies = () => {
           // Small delay to allow smooth animation
           setTimeout(() => {
             setTrailerKey(null);
+            setShowNoTrailerMessage(false);
           }, 200);
         }
       }}>
@@ -1228,14 +1224,15 @@ const EnhancedMovies = () => {
               onClick={() => {
                 setIsPlayerOpen(false);
                 setTrailerKey(null);
+                setShowNoTrailerMessage(false);
               }}
               className="absolute -top-10 right-0 z-50 text-white hover:text-gray-300 transition-colors"
             >
               <X className="w-6 h-6" />
             </button>
             
-            {/* Always show iframe to prevent loading delay */}
-            {trailerKey && (
+            {/* Video Player or No Trailer Message */}
+            {trailerKey ? (
               <iframe
                 key={trailerKey}
                 src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=0`}
@@ -1245,22 +1242,40 @@ const EnhancedMovies = () => {
                 title={selectedMovie?.title || 'Movie Trailer'}
                 loading="eager"
               />
-            )}
+            ) : showNoTrailerMessage ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-4 text-center">
+                <p className="text-xl mb-4">Трейлер не найден</p>
+                <p className="mb-6">К сожалению, трейлер для этого фильма недоступен.</p>
+                <div className="flex flex-col space-y-4 w-full max-w-xs">
+                  <Button 
+                    onClick={() => {
+                      if (currentMovie) {
+                        const searchQuery = `${currentMovie.title} ${contentType === 'tv' ? 'сериал смотреть онлайн' : 'фильм смотреть онлайн'}`;
+                        window.open(`https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`, '_blank');
+                      }
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md"
+                  >
+                    Смотреть фильм онлайн
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsPlayerOpen(false)}
+                    className="text-white border-white hover:bg-white/10 py-2 px-4"
+                  >
+                    Закрыть
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             
             {/* Loading overlay */}
-            {isLoadingTrailer && (
+            {isLoadingTrailer && !trailerKey && !showNoTrailerMessage && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/80 transition-opacity">
                 <div className="text-center">
                   <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-white mx-auto mb-4"></div>
-                  <p className="text-white">Loading trailer...</p>
+                  <p className="text-white">Загрузка трейлера...</p>
                 </div>
-              </div>
-            )}
-            
-            {/* Error state */}
-            {!trailerKey && !isLoadingTrailer && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-white">
-                <p>No trailer available</p>
               </div>
             )}
           </div>
