@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  imageUrl?: string;
 }
 
 const AIAssistant = () => {
@@ -206,10 +207,23 @@ const AIAssistant = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
+    // Validate file type
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!validTypes.includes(file.type)) {
       toast({
         title: 'Invalid file type',
-        description: 'Please upload an image file (JPEG, PNG, etc.)',
+        description: 'Please upload a JPEG, PNG, or WebP image.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      toast({
+        title: 'File too large',
+        description: 'Please upload an image smaller than 5MB.',
         variant: 'destructive',
       });
       return;
@@ -218,29 +232,29 @@ const AIAssistant = () => {
     setIsUploadingImage(true);
     
     try {
-      // Convert image to base64
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Data = reader.result as string;
-        // Send to your API for image recognition
-        const response = await fetch('/api/analyze-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64Data }),
-        });
-        
-        if (!response.ok) throw new Error('Image analysis failed');
-        
-        const result = await response.json();
-        // Use the analysis result to search for movies
-        await sendMessage(`Find movies with this scene or similar to: ${result.description}`);
-      };
-      reader.readAsDataURL(file);
+      // Create a preview URL for the image
+      const imageUrl = URL.createObjectURL(file);
+      
+      // Add the image to the chat
+      const newMessages = [
+        ...messages, 
+        { 
+          role: 'user' as const, 
+          content: `[Image: ${file.name}]`, 
+          imageUrl 
+        }
+      ];
+      setMessages(newMessages);
+
+      // In a real app, you would upload the image to your server here
+      // For now, we'll just send a message about the image
+      await sendMessage(`I've uploaded an image: ${file.name}. Can you help me find similar movies?`);
+      
     } catch (error) {
       console.error('Error processing image:', error);
       toast({
-        title: 'Image processing failed',
-        description: 'Could not analyze the image. Please try another one.',
+        title: 'Upload failed',
+        description: 'Could not process the image. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -453,8 +467,21 @@ const AIAssistant = () => {
             {messages.map((message, index) => (
               <div
                 key={index}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}
               >
+                {message.imageUrl && (
+                  <div className="max-w-[80%] mb-1 rounded-lg overflow-hidden">
+                    <img 
+                      src={message.imageUrl} 
+                      alt="Uploaded content"
+                      className="max-h-40 w-auto rounded-lg object-cover"
+                      onLoad={(e) => {
+                        // Revoke the object URL to free up memory
+                        URL.revokeObjectURL(message.imageUrl!);
+                      }}
+                    />
+                  </div>
+                )}
                 <div
                   className={`max-w-[80%] p-3 rounded-lg ${
                     message.role === 'user'
