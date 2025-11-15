@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, Send, X, Lightbulb, Minimize2, Maximize2, Trash2, Lock } from 'lucide-react';
+import { Bot, Send, X, Lightbulb, Minimize2, Maximize2, Trash2, Lock, Mic, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
@@ -35,6 +35,10 @@ const AIAssistant = () => {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -129,12 +133,157 @@ const AIAssistant = () => {
     };
   }, [messages, user?.id]);
 
+  // Initialize speech recognition
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          recognitionRef.current = new SpeechRecognition();
+          if (recognitionRef.current) {
+            // Set basic properties
+            recognitionRef.current.continuous = false;
+            recognitionRef.current.interimResults = false;
+            recognitionRef.current.lang = 'en-US';
+
+            // Set up event handlers
+            recognitionRef.current.onresult = (event: any) => {
+              const transcript = event.results[0][0].transcript;
+              if (transcript) {
+                setInputMessage(transcript);
+                sendMessage(transcript);
+              }
+            };
+
+            recognitionRef.current.onerror = (event: any) => {
+              console.error('Speech recognition error', event);
+              const errorMessage = event.error === 'not-allowed' 
+                ? 'Microphone access was denied. Please allow microphone access in your browser settings.'
+                : 'Could not process voice input. Please try again.';
+              
+              toast({
+                title: 'Voice input error',
+                description: errorMessage,
+                variant: 'destructive',
+              });
+              setIsRecording(false);
+            };
+
+            recognitionRef.current.onend = () => {
+              setIsRecording(false);
+            };
+          }
+        } catch (error) {
+          console.error('Error initializing speech recognition:', error);
+          toast({
+            title: 'Error',
+            description: 'Failed to initialize voice input',
+            variant: 'destructive',
+          });
+        }
+      }
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (error) {
+          console.error('Error stopping speech recognition:', error);
+        }
+      }
+    };
+  }, [toast]);
+
   // Auto-scroll to latest message
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, isLoading]);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: 'Invalid file type',
+        description: 'Please upload an image file (JPEG, PNG, etc.)',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsUploadingImage(true);
+    
+    try {
+      // Convert image to base64
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Data = reader.result as string;
+        // Send to your API for image recognition
+        const response = await fetch('/api/analyze-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Data }),
+        });
+        
+        if (!response.ok) throw new Error('Image analysis failed');
+        
+        const result = await response.json();
+        // Use the analysis result to search for movies
+        await sendMessage(`Find movies with this scene or similar to: ${result.description}`);
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error processing image:', error);
+      toast({
+        title: 'Image processing failed',
+        description: 'Could not analyze the image. Please try another one.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUploadingImage(false);
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const toggleVoiceInput = () => {
+    if (!recognitionRef.current) {
+      toast({
+        title: 'Voice input not supported',
+        description: 'Your browser does not support voice input.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (isRecording) {
+      try {
+        recognitionRef.current.stop();
+      } catch (error) {
+        console.error('Error stopping speech recognition:', error);
+      }
+      setIsRecording(false);
+    } else {
+      try {
+        setInputMessage('Listening...');
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } catch (error) {
+        console.error('Error starting speech recognition:', error);
+        toast({
+          title: 'Voice input error',
+          description: 'Could not start voice recognition. Please try again.',
+          variant: 'destructive',
+        });
+        setIsRecording(false);
+        setInputMessage('');
+      }
+    }
+  };
 
   const sendMessage = async (customMessage?: string) => {
     if (!isVerified) {
@@ -334,17 +483,57 @@ const AIAssistant = () => {
 
         <div className="p-4 border-t">
           <div className="flex gap-2">
-            <Input
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={isVerified ? "Ask about movies, actors, plots..." : "Verify your account to start chatting"}
-              className="flex-1"
-              disabled={isLoading || !isVerified}
-            />
+            <div className="relative flex-1">
+              <Input
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder={isVerified ? "Ask about movies, actors, plots..." : "Verify your account to start chatting"}
+                className="pr-24"
+                disabled={isLoading || !isVerified}
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isLoading || !isVerified || isUploadingImage}
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  aria-label="Upload image"
+                  title="Upload image"
+                >
+                  {isUploadingImage ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ImageIcon size={16} />
+                  )}
+                </Button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageUpload}
+                  disabled={isUploadingImage}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleVoiceInput}
+                  disabled={isLoading || !isVerified || isRecording}
+                  className={`h-8 w-8 p-0 ${isRecording ? 'text-red-500' : 'text-muted-foreground hover:text-foreground'}`}
+                  aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
+                  title={isRecording ? 'Stop recording' : 'Start voice input'}
+                >
+                  <Mic size={16} className={isRecording ? 'animate-pulse' : ''} />
+                </Button>
+              </div>
+            </div>
             <Button
               onClick={() => sendMessage()}
-              disabled={!inputMessage.trim() || isLoading || !isVerified}
+              disabled={!inputMessage.trim() || isLoading || !isVerified || isRecording}
               size="icon"
               className="bg-primary hover:bg-primary/90"
               aria-label="Send message"
