@@ -581,22 +581,25 @@ const EnhancedMovies = () => {
   const toggleFavorite = async (movieId: number) => {
     if (!user) {
       toast({
-        title: "Sign in required",
-        description: "Please sign in to add favorites",
+        title: "Требуется вход",
+        description: "Пожалуйста, войдите, чтобы добавлять в избранное",
         variant: "destructive"
       });
       return;
     }
 
     try {
+      const movieIdStr = movieId.toString();
       const isFavorited = favorites.has(movieId);
       
       if (isFavorited) {
-        await supabase
+        const { error } = await supabase
           .from('user_favorites')
           .delete()
           .eq('user_id', user.id)
-          .eq('movie_id', movieId.toString());
+          .eq('movie_id', movieIdStr);
+        
+        if (error) throw error;
         
         setFavorites(prev => {
           const newSet = new Set(prev);
@@ -604,23 +607,37 @@ const EnhancedMovies = () => {
           return newSet;
         });
         
-        toast({ title: "Removed from favorites" });
+        toast({ 
+          title: "Удалено из избранного",
+          description: "Фильм успешно удален из вашего списка избранного"
+        });
       } else {
-        await supabase
-          .from('user_favorites')
-          .insert({
+        const { error } = await supabase.from('user_favorites').upsert(
+          {
             user_id: user.id,
-            movie_id: movieId.toString()
-          });
+            movie_id: movieIdStr,
+            created_at: new Date().toISOString()
+          },
+          { onConflict: 'user_id,movie_id' }
+        );
+        
+        if (error) throw error;
         
         setFavorites(prev => new Set(prev).add(movieId));
-        toast({ title: "Added to favorites" });
+        toast({ 
+          title: "Добавлено в избранное",
+          description: "Фильм успешно добавлен в ваш список избранного"
+        });
       }
+      
+      // Refresh user preferences to ensure consistency
+      await fetchUserPreferences();
+      
     } catch (error) {
-      console.error('Error toggling favorite:', error);
+      console.error('Ошибка при обновлении избранного:', error);
       toast({
-        title: "Error",
-        description: "Failed to update favorites",
+        title: "Ошибка",
+        description: "Не удалось обновить избранное. Пожалуйста, попробуйте снова.",
         variant: "destructive"
       });
     }
@@ -629,22 +646,25 @@ const EnhancedMovies = () => {
   const toggleWatchlist = async (movieId: number) => {
     if (!user) {
       toast({
-        title: "Sign in required",
-        description: "Please sign in to add to watchlist",
+        title: "Требуется вход",
+        description: "Пожалуйста, войдите, чтобы управлять списком просмотра",
         variant: "destructive"
       });
       return;
     }
 
     try {
+      const movieIdStr = movieId.toString();
       const isInWatchlist = watchlist.has(movieId);
       
       if (isInWatchlist) {
-        await supabase
+        const { error } = await supabase
           .from('user_watchlist')
           .delete()
           .eq('user_id', user.id)
-          .eq('movie_id', movieId.toString());
+          .eq('movie_id', movieIdStr);
+        
+        if (error) throw error;
         
         setWatchlist(prev => {
           const newSet = new Set(prev);
@@ -652,23 +672,39 @@ const EnhancedMovies = () => {
           return newSet;
         });
         
-        toast({ title: "Removed from watchlist" });
+        toast({ 
+          title: "Удалено из списка просмотра",
+          description: "Фильм успешно удален из вашего списка просмотра"
+        });
       } else {
-        await supabase
-          .from('user_watchlist')
-          .insert({
+        const { error } = await supabase.from('user_watchlist').upsert(
+          {
             user_id: user.id,
-            movie_id: movieId.toString()
-          });
+            movie_id: movieIdStr,
+            status: 'plan_to_watch',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'user_id,movie_id' }
+        );
+        
+        if (error) throw error;
         
         setWatchlist(prev => new Set(prev).add(movieId));
-        toast({ title: "Added to watchlist" });
+        toast({ 
+          title: "Добавлено в список просмотра",
+          description: "Фильм успешно добавлен в ваш список просмотра"
+        });
       }
+      
+      // Refresh user preferences to ensure consistency
+      await fetchUserPreferences();
+      
     } catch (error) {
-      console.error('Error toggling watchlist:', error);
+      console.error('Ошибка при обновлении списка просмотра:', error);
       toast({
-        title: "Error",
-        description: "Failed to update watchlist",
+        title: "Ошибка",
+        description: "Не удалось обновить список просмотра. Пожалуйста, попробуйте снова.",
         variant: "destructive"
       });
     }
