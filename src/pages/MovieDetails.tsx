@@ -42,6 +42,7 @@ const MovieDetails = () => {
   const [isFavorite, setIsFavorite] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
   const [reco, setReco] = useState<Movie[]>([]);
+  const [showTrailer, setShowTrailer] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -184,6 +185,11 @@ const MovieDetails = () => {
     }
   };
 
+  const handleTrailerClick = (key: string) => {
+    logTrailerPlay(movie?.id || 0, movie?.title || '');
+    window.open(`https://www.youtube.com/watch?v=${key}`, '_blank');
+  };
+
   const handleShare = async () => {
     const url = window.location.href;
     
@@ -222,12 +228,8 @@ const MovieDetails = () => {
 
   if (!movie) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <h1 className="text-2xl font-bold mb-4">Movie not found</h1>
-        <Button onClick={() => navigate(-1)}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Go Back
-        </Button>
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Фильм не найден</p>
       </div>
     );
   }
@@ -238,6 +240,52 @@ const MovieDetails = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center gap-4 mb-6">
+          <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl font-bold">{movie.title}</h1>
+        </div>
+        
+        {/* Trailer Section */}
+        {movie.videos?.results && movie.videos.results.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold mb-4">Трейлеры и видео</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {movie.videos.results
+                .filter(video => video.site === 'YouTube' && (video.type === 'Trailer' || video.type === 'Teaser'))
+                .map((video) => (
+                  <div 
+                    key={video.key} 
+                    className="relative cursor-pointer group"
+                    onClick={() => handleTrailerClick(video.key)}
+                  >
+                    <div className="aspect-video bg-muted rounded-lg overflow-hidden relative">
+                      <img 
+                        src={`https://img.youtube.com/vi/${video.key}/hqdefault.jpg`} 
+                        alt={video.name}
+                        className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center opacity-90 group-hover:opacity-100 transition-opacity">
+                          <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+                    <h3 className="mt-2 text-sm font-medium line-clamp-2">{video.name}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {video.type === 'Trailer' ? 'Трейлер' : 'Тизер'} • {video.site}
+                    </p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+      
       {/* Hero Section */}
       <div className="relative h-96 md:h-[500px] overflow-hidden">
         <div
