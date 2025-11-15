@@ -37,7 +37,6 @@ const Profile = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [watchlistMovies, setWatchlistMovies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [watchlistLoading, setWatchlistLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editBio, setEditBio] = useState("");
@@ -112,31 +111,44 @@ const Profile = () => {
   const fetchWatchlist = async () => {
     if (!user) return;
     
-    setWatchlistLoading(true);
     try {
-      const { data, error } = await supabase
+      // Get all movie IDs from watchlist
+      const { data: watchlistData, error } = await supabase
         .from('user_watchlist')
         .select('movie_id')
         .eq('user_id', user.id);
 
       if (error) throw error;
 
-      // Fetch movie details from TMDB for each movie in watchlist
-      if (data && data.length > 0) {
-        const moviePromises = data.map(async (item) => {
-          const { data: movieData } = await supabase.functions.invoke('tmdb-movies', {
-            body: { endpoint: `movie/${item.movie_id}` }
-          });
-          return movieData;
-        });
+      // If there are movies, fetch their details in a batch
+      if (watchlistData?.length > 0) {
+        const movieIds = watchlistData.map(item => item.movie_id).join(',');
         
-        const movies = await Promise.all(moviePromises);
-        setWatchlistMovies(movies.filter(Boolean));
+        // Single API call for all movies
+        const { data } = await supabase.functions.invoke('tmdb-movies', {
+          body: { 
+            endpoint: 'discover/movie',
+            params: {
+              with_ids: movieIds,
+              page: 1,
+              sort_by: 'popularity.desc'
+            }
+          }
+        });
+
+        if (data?.results) {
+          setWatchlistMovies(data.results);
+        }
+      } else {
+        setWatchlistMovies([]);
       }
     } catch (error) {
       console.error('Error fetching watchlist:', error);
-    } finally {
-      setWatchlistLoading(false);
+      toast({
+        title: "Ошибка",
+        description: "Не удалось загрузить список ожидания",
+        variant: "destructive",
+      });
     }
   };
 
@@ -286,19 +298,7 @@ const Profile = () => {
             <h2 className="text-2xl font-bold">My Watchlist</h2>
           </div>
           
-          {watchlistLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {[...Array(3)].map((_, i) => (
-                <Card key={i} className="animate-pulse">
-                  <div className="aspect-[2/3] bg-muted rounded-t-lg"></div>
-                  <CardContent className="p-4">
-                    <div className="h-4 bg-muted rounded mb-2"></div>
-                    <div className="h-3 bg-muted rounded"></div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : watchlistMovies.length > 0 ? (
+          {watchlistMovies.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
               {watchlistMovies.map((movie, index) => (
                 <Card 
