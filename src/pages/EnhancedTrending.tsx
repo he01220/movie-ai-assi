@@ -216,18 +216,59 @@ const EnhancedTrending = () => {
   const fetchTrendingContent = useCallback(async () => {
     if (!isMounted.current) return;
     
-    setLoading(true);
     const cacheKey = `trending_${period}`;
     const epMovie = `trending/movie/${period}`;
     const epTV = `trending/tv/${period}`;
     
-    // Try to get from cache first
-    const cachedData = await getFromCache(cacheKey);
-    if (cachedData && isMounted.current) {
-      setMovies(cachedData.movies || []);
-      setTvShows(cachedData.tvShows || []);
-      setLoading(false); // Don't show loading if we have cached data
-      return;
+    // Show cached data immediately if available
+    const showCachedData = async () => {
+      const cachedData = await getFromCache(cacheKey);
+      if (cachedData && isMounted.current) {
+        setMovies(cachedData.movies || []);
+        setTvShows(cachedData.tvShows || []);
+        return true;
+      }
+      return false;
+    };
+    
+    // Start loading fresh data in the background
+    const loadFreshData = async () => {
+      setLoading(true);
+      try {
+        const [moviesData, tvData] = await Promise.all([
+          fetchFromTMDB(epMovie),
+          fetchFromTMDB(epTV)
+        ]);
+        
+        if (isMounted.current) {
+          const newMovies = moviesData?.results || [];
+          const newTvShows = tvData?.results || [];
+          
+          if (newMovies.length > 0 || newTvShows.length > 0) {
+            setMovies(newMovies);
+            setTvShows(newTvShows);
+            await saveToCache(cacheKey, {
+              movies: newMovies,
+              tvShows: newTvShows
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error loading fresh data:', error);
+      } finally {
+        if (isMounted.current) {
+          setLoading(false);
+        }
+      }
+    };
+    
+    // Try to show cached data first, then load fresh data
+    const hasCachedData = await showCachedData();
+    loadFreshData(); // Don't await this, let it run in background
+    
+    // If no cached data, show loading state
+    if (!hasCachedData) {
+      setLoading(true);
     }
     
     try {
@@ -317,33 +358,10 @@ const EnhancedTrending = () => {
           variant: 'destructive'
         });
       }
-    } finally {
-      if (isMounted.current) {
-        setIsPlayerOpen(true);
-      }
     }
   };
 
-  useEffect(() => {
-    // Очистка устаревшего кэша при загрузке
-    const cleanupOldCache = async () => {
-      try {
-        await supabase
-          .from('tmdb_cache' as never) // Используем тип never, так как таблица не определена в генерируемых типах
-          .delete()
-          .lt('expires_at', new Date().toISOString());
-      } catch (error) {
-        console.error('Ошибка при очистке устаревшего кэша:', error);
-      }
-    };
-    
-    cleanupOldCache();
-    
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
-
+  // Initialize component
   useEffect(() => {
     const initialize = async () => {
       try {
@@ -382,7 +400,12 @@ const EnhancedTrending = () => {
       }
     };
     initialize();
-  }, [period, currentUser, recoPage, recoCount]);
+    
+    // Cleanup function
+    return () => {
+      isMounted.current = false;
+    };
+  }, [period, currentUser, recoPage, recoCount, fetchTrendingContent]);
 
   // Toggle favorite status
   const toggleFavorite = useCallback((movieId: number) => {
