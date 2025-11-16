@@ -63,9 +63,9 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                 />
                 
                 {/* Watch Full Movie button - positioned absolutely over the video */}
-                <div className="absolute bottom-0 left-0 right-0 z-50 p-4">
+                <div className="absolute bottom-0 left-0 right-0 z-[100] p-4">
                   <div className="max-w-2xl mx-auto relative">
-                    <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-black/90 to-transparent"></div>
+                    <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black/90 via-black/70 to-transparent pointer-events-none"></div>
                     <Button 
                       onClick={(e) => {
                         e.stopPropagation();
@@ -73,12 +73,17 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                       }}
                       variant="default"
                       size="lg"
-                      className="relative z-10 w-full bg-red-600 hover:bg-red-700 text-white py-3 px-8 text-lg font-bold 
+                      className="relative z-[101] w-full bg-red-600 hover:bg-red-700 text-white py-3 px-8 text-lg font-bold 
                       shadow-2xl hover:shadow-red-500/30 transform hover:scale-[1.02] transition-all duration-300
-                      flex items-center justify-center gap-2 rounded-full border-2 border-white/20"
+                      flex items-center justify-center gap-2 rounded-full border-2 border-white/20
+                      active:scale-95 focus-visible:ring-2 focus-visible:ring-white/50"
+                      style={{
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+                        WebkitTapHighlightColor: 'transparent'
+                      }}
                     >
-                      <Film className="w-5 h-5" />
-                      Смотреть фильм полностью
+                      <Film className="w-5 h-5 flex-shrink-0" />
+                      <span>Смотреть фильм полностью</span>
                     </Button>
                   </div>
                 </div>

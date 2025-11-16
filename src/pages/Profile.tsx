@@ -20,14 +20,33 @@ interface Movie {
   [key: string]: any;
 }
 
-interface UserProfile {
+// Database response type
+interface DatabaseProfile {
   id: string;
   username?: string | null;
   full_name?: string | null;
+  display_name?: string | null;
   avatar_url?: string | null;
   bio?: string | null;
   created_at?: string;
   updated_at?: string;
+  language?: string | null;
+  preferred_language?: string | null;
+  [key: string]: any; // Allow for additional properties
+}
+
+// Our application's profile type
+interface UserProfile {
+  id: string;
+  username: string;
+  full_name: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  created_at: string;
+  updated_at: string;
+  language: string;
+  preferred_language: string;
 }
 
 const Profile = () => {
@@ -51,28 +70,80 @@ const Profile = () => {
   // Constants
   const PAGE_SIZE = 8;
 
-  // Fetch user profile
+  // Fetch user profile with error handling and retry logic
   const fetchProfile = useCallback(async () => {
     if (!user) {
       setProfile(null);
       setLoading(false);
       return;
     }
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      if (error) throw error;
-      setProfile(data);
-    } catch (error) {
-      setProfile(null);
-      toast({ title: 'Failed to load profile', description: String(error), variant: 'destructive' });
-    } finally {
-      setLoading(false);
-    }
+
+    const loadProfile = async (attempt = 1) => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single<DatabaseProfile>();
+
+        if (error) throw error;
+        
+        // Transform the data to match UserProfile interface
+        const profileData: UserProfile = {
+          id: data.id,
+          username: data.username || user.email?.split('@')[0] || 'user',
+          full_name: data.full_name || user.email || 'User',
+          display_name: data.display_name || data.full_name || user.email?.split('@')[0] || 'User',
+          avatar_url: data.avatar_url || null,
+          bio: data.bio || null,
+          created_at: data.created_at || new Date().toISOString(),
+          updated_at: data.updated_at || new Date().toISOString(),
+          language: data.language || 'ru-RU',
+          preferred_language: data.preferred_language || 'ru-RU'
+        };
+        
+        setProfile(profileData);
+        setEditDisplayName(profileData.full_name || '');
+        setEditUsername(profileData.username || '');
+        setEditBio(profileData.bio || '');
+        
+      } catch (error) {
+        console.error('Profile load error (attempt', attempt, '):', error);
+        
+        if (attempt < 3) {
+          // Retry after a delay
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          return loadProfile(attempt + 1);
+        }
+        
+        // If we've tried 3 times and still failing, show error but don't block UI
+        toast({
+          title: 'Ошибка загрузки профиля',
+          description: 'Не удалось загрузить данные профиля. Пожалуйста, обновите страницу.',
+          variant: 'destructive',
+        });
+        
+        // Set default profile data to prevent UI breaking
+        const defaultProfile: UserProfile = {
+          id: user.id,
+          username: user.email?.split('@')[0] || 'user',
+          full_name: user.email || 'User',
+          display_name: user.email?.split('@')[0] || 'User',
+          avatar_url: null,
+          bio: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          language: 'ru-RU',
+          preferred_language: 'ru-RU'
+        };
+        setProfile(defaultProfile);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProfile();
   }, [user, toast]);
 
   useEffect(() => {
@@ -320,18 +391,58 @@ const Profile = () => {
   };
 
   // Initial load
+  // Initial load with proper cleanup
   useEffect(() => {
-    if (!user) {
-      navigate('/auth');
-      return;
-    }
-    
-    // Set document language to Russian
-    document.documentElement.lang = 'ru';
-    
-    fetchProfile();
-    fetchWatchlist();
-  }, [user, navigate, fetchProfile, fetchWatchlist]);
+    let isMounted = true;
+
+    const initialize = async () => {
+      if (!user) {
+        navigate('/auth');
+        return;
+      }
+      
+      // Set document language to Russian
+      document.documentElement.lang = 'ru';
+      
+      try {
+        // Initialize with default profile first to prevent UI flicker
+        const defaultProfile: UserProfile = {
+          id: user.id,
+          username: user.email?.split('@')[0] || 'user',
+          full_name: user.email || 'User',
+          display_name: user.email?.split('@')[0] || 'User',
+          avatar_url: null,
+          bio: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          language: 'ru-RU',
+          preferred_language: 'ru-RU'
+        };
+        setProfile(defaultProfile);
+        
+        // Then fetch the actual data
+        await Promise.all([
+          fetchProfile(),
+          fetchWatchlist()
+        ]);
+      } catch (error) {
+        console.error('Initialization error:', error);
+        if (isMounted) {
+          toast({
+            title: 'Ошибка инициализации',
+            description: 'Не удалось загрузить данные. Пожалуйста, обновите страницу.',
+            variant: 'destructive',
+          });
+        }
+      }
+    };
+
+    initialize();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, navigate, fetchProfile, fetchWatchlist, toast]);
 
   // Skeleton loader for movies
   const renderMovieSkeletons = () => (
