@@ -30,8 +30,8 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl w-full p-0 bg-transparent border-0">
-        <div className="relative pt-[56.25%] w-full bg-black">
+      <DialogContent className="max-w-4xl w-full p-0 bg-transparent border-0 overflow-visible">
+        <div className="relative pt-[56.25%] w-full bg-black overflow-visible">
           <Button 
             onClick={onClose}
             variant="ghost"
@@ -62,7 +62,7 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                 />
               </div>
               {/* Watch Full Movie button - fixed at bottom */}
-              <div className="fixed bottom-0 left-0 right-0 z-[9999] p-4 bg-gradient-to-t from-black/80 via-black/60 to-transparent">
+              <div className="absolute bottom-0 left-0 right-0 z-50 p-4 bg-gradient-to-t from-black/90 via-black/70 to-transparent pointer-events-none">
                 <div className="max-w-2xl mx-auto">
                   <Button 
                     onClick={(e) => {
@@ -73,7 +73,7 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                     size="lg"
                     className="w-full bg-red-600 hover:bg-red-700 text-white py-4 px-8 text-lg font-bold 
                     shadow-2xl hover:shadow-red-500/30 transform hover:scale-[1.02] transition-all duration-300
-                    flex items-center justify-center gap-2 rounded-full border-2 border-white/20"
+                    flex items-center justify-center gap-2 rounded-full border-2 border-white/20 pointer-events-auto"
                   >
                     <Film className="w-5 h-5" />
                     Смотреть фильм полностью
