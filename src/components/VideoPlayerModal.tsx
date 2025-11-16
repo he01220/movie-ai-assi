@@ -64,6 +64,21 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                 
                 {/* Watch Full Movie button - positioned absolutely over the video */}
                 <div className="absolute bottom-0 left-0 right-0 z-[100] p-4 pointer-events-none">
+                  {/* Test element - should be bright red and visible */}
+                  <div style={{
+                    position: 'fixed',
+                    bottom: '20px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    backgroundColor: 'red',
+                    color: 'white',
+                    padding: '10px 20px',
+                    borderRadius: '5px',
+                    zIndex: 1000
+                  }}>
+                    TEST ELEMENT - CAN YOU SEE ME?
+                  </div>
+                  
                   <div className="max-w-2xl mx-auto relative">
                     <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-black/90 via-black/70 to-transparent pointer-events-none"></div>
                     <div className="relative z-[101] p-4 pointer-events-auto">
