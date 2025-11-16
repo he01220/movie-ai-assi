@@ -62,49 +62,23 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                   loading="eager"
                 />
                 
-                {/* Watch Full Movie button - positioned absolutely over the video */}
-                <div className="absolute bottom-0 left-0 right-0 z-[100] p-4 pointer-events-none">
-                  {/* Test element - should be bright red and visible */}
-                  <div style={{
-                    position: 'fixed',
-                    bottom: '20px',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    backgroundColor: 'red',
-                    color: 'white',
-                    padding: '10px 20px',
-                    borderRadius: '5px',
-                    zIndex: 1000
-                  }}>
-                    TEST ELEMENT - CAN YOU SEE ME?
-                  </div>
-                  
-                  <div className="max-w-2xl mx-auto relative">
-                    <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-black/90 via-black/70 to-transparent pointer-events-none"></div>
-                    <div className="relative z-[101] p-4 pointer-events-auto">
-                      <Button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSearchInBrowser(false);
-                        }}
-                        variant="default"
-                        size="lg"
-                        className="w-full bg-red-600 hover:bg-red-700 text-white py-4 px-8 text-lg font-bold 
-                        shadow-2xl hover:shadow-red-500/30 transform hover:scale-[1.02] transition-all duration-300
-                        flex items-center justify-center gap-2 rounded-full border-2 border-white/20
-                        active:scale-95 focus-visible:ring-2 focus-visible:ring-white/50"
-                        style={{
-                          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)',
-                          WebkitTapHighlightColor: 'transparent',
-                          minWidth: '280px',
-                          backdropFilter: 'blur(4px)'
-                        }}
-                      >
-                        <Film className="w-5 h-5 flex-shrink-0" />
-                        <span>Смотреть фильм полностью</span>
-                      </Button>
-                    </div>
-                  </div>
+                {/* Test element - positioned absolutely over the video */}
+                <div style={{
+                  position: 'fixed',
+                  bottom: '50px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  backgroundColor: 'red',
+                  color: 'white',
+                  padding: '20px 40px',
+                  borderRadius: '10px',
+                  zIndex: 9999,
+                  fontSize: '24px',
+                  fontWeight: 'bold',
+                  border: '3px solid white',
+                  boxShadow: '0 0 20px rgba(255,255,255,0.8)'
+                }}>
+                  CAN YOU SEE THIS TEXT?
                 </div>
               </div>
             </div>
