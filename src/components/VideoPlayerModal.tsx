@@ -62,8 +62,8 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                 />
               </div>
               {/* Watch Full Movie button - fixed at bottom */}
-              <div className="fixed bottom-0 left-0 right-0 z-50">
-                <div className="container mx-auto px-4 pb-6">
+              <div className="fixed bottom-0 left-0 right-0 z-[9999] p-4 bg-gradient-to-t from-black/80 via-black/60 to-transparent">
+                <div className="max-w-2xl mx-auto">
                   <Button 
                     onClick={(e) => {
                       e.stopPropagation();
@@ -72,8 +72,8 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                     variant="default"
                     size="lg"
                     className="w-full bg-red-600 hover:bg-red-700 text-white py-4 px-8 text-lg font-bold 
-                    shadow-xl hover:shadow-2xl transform hover:scale-[1.02] transition-all duration-300
-                    flex items-center justify-center gap-2 rounded-full"
+                    shadow-2xl hover:shadow-red-500/30 transform hover:scale-[1.02] transition-all duration-300
+                    flex items-center justify-center gap-2 rounded-full border-2 border-white/20"
                   >
                     <Film className="w-5 h-5" />
                     Смотреть фильм полностью
