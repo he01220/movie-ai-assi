@@ -23,12 +23,10 @@ interface Movie {
 interface UserProfile {
   id: string;
   username?: string | null;
-  display_name?: string | null;
+  full_name?: string | null;
   avatar_url?: string | null;
   bio?: string | null;
   created_at?: string;
-  language?: string | null;
-  preferred_language?: string | null;
   updated_at?: string;
 }
 
@@ -54,45 +52,38 @@ const Profile = () => {
   const PAGE_SIZE = 8;
 
   // Fetch user profile
-  const fetchUserProfile = useCallback(async () => {
-    if (!user) return;
-    
+  const fetchProfile = useCallback(async () => {
+    if (!user) {
+      setProfile(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
-
       if (error) throw error;
-      
-      const profileData = data as Partial<UserProfile>;
-      const emailPrefix = user.email?.split('@')[0] || 'user';
-      
-      const safeProfile: UserProfile = {
-        id: profileData.id || user.id,
-        username: profileData.username || emailPrefix,
-        display_name: profileData.display_name || profileData.username || emailPrefix,
-        avatar_url: profileData.avatar_url || null,
-        bio: profileData.bio || '',
-        created_at: profileData.created_at || new Date().toISOString(),
-        language: profileData.language || 'en',
-        preferred_language: profileData.preferred_language || 'en',
-        updated_at: profileData.updated_at || new Date().toISOString()
-      };
-      
-      setProfile(safeProfile);
-      setEditDisplayName(safeProfile.display_name || '');
-      setEditBio(safeProfile.bio || '');
+      setProfile(data);
     } catch (error) {
-      console.error('Error fetching profile:', error);
-      toast({
-        title: "Ошибка",
-        description: "Не удалось загрузить профиль",
-        variant: "destructive",
-      });
+      setProfile(null);
+      toast({ title: 'Failed to load profile', description: String(error), variant: 'destructive' });
+    } finally {
+      setLoading(false);
     }
   }, [user, toast]);
+
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
+
+  useEffect(() => {
+    if (user) {
+      fetchProfile();
+    }
+  }, [user, fetchProfile]);
 
   // Fetch watchlist with pagination
   const fetchWatchlist = useCallback(async (loadMore = false) => {
@@ -315,13 +306,13 @@ const Profile = () => {
   const toggleEditMode = () => {
     if (editing) {
       // If already in edit mode, cancel and reset to original values
-      setEditDisplayName(profile?.display_name || '');
+      setEditDisplayName(profile?.full_name || '');
       setEditUsername(profile?.username || '');
       setEditBio(profile?.bio || '');
       setEditing(false);
     } else {
       // Enter edit mode with current values
-      setEditDisplayName(profile?.display_name || '');
+      setEditDisplayName(profile?.full_name || '');
       setEditUsername(profile?.username || '');
       setEditBio(profile?.bio || '');
       setEditing(true);
@@ -338,9 +329,9 @@ const Profile = () => {
     // Set document language to Russian
     document.documentElement.lang = 'ru';
     
-    fetchUserProfile();
+    fetchProfile();
     fetchWatchlist();
-  }, [user, navigate, fetchUserProfile, fetchWatchlist]);
+  }, [user, navigate, fetchProfile, fetchWatchlist]);
 
   // Skeleton loader for movies
   const renderMovieSkeletons = () => (
@@ -363,6 +354,13 @@ const Profile = () => {
     );
   }
 
+  if (loading) {
+    return <Skeleton className="h-24 w-full" />;
+  }
+
+  const displayName = (profile?.full_name && profile.full_name !== 'user') ? profile.full_name : user?.email || 'Unknown User';
+  const username = (profile?.username && profile.username !== 'user') ? profile.username : user?.email?.split('@')[0] || 'unknown';
+
   return (
     <div className="min-h-screen bg-background">
       {/* Profile Header */}
@@ -371,10 +369,11 @@ const Profile = () => {
           <div className="flex flex-col items-center sm:flex-row gap-8">
             <div className="relative group">
               <Avatar className="h-32 w-32 border-4 border-background">
-                <AvatarImage src={profile?.avatar_url || ''} alt={profile?.display_name || 'User'} />
-                <AvatarFallback className="text-2xl">
-                  {profile?.display_name?.charAt(0) || 'U'}
-                </AvatarFallback>
+                {profile?.avatar_url ? (
+                  <AvatarImage src={profile.avatar_url} alt={displayName} />
+                ) : (
+                  <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
+                )}
               </Avatar>
               <button 
                 onClick={toggleEditMode}
@@ -388,7 +387,7 @@ const Profile = () => {
               <div className="flex-1 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div className="text-center sm:text-left">
                   <h1 className="text-3xl font-bold tracking-tight">
-                    {profile?.display_name}
+                    {displayName}
                   </h1>
                 </div>
                 <div className="flex gap-2 justify-center sm:justify-start">
@@ -405,7 +404,7 @@ const Profile = () => {
               <div className="flex justify-center mt-2">
                 <div className="flex items-center gap-1 bg-muted/50 px-3 py-1 rounded-full">
                   <span className="text-muted-foreground">@</span>
-                  <span className="text-muted-foreground font-medium">{profile?.username || 'user'}</span>
+                  <span className="text-muted-foreground font-medium">{username}</span>
                 </div>
               </div>
               

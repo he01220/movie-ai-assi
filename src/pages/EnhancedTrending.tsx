@@ -800,6 +800,20 @@ const EnhancedTrending = () => {
         videoKey={videoKey || null}
         movieTitle={selectedMovie?.title || selectedMovie?.name || ''}
       />
+
+      {selectedMovie && (
+        <div className="mt-4 flex justify-center">
+          <button
+            className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors"
+            onClick={() => {
+              const query = `${selectedMovie.title || selectedMovie.name} full movie`;
+              window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+            }}
+          >
+            Watch Full Movie
+          </button>
+        </div>
+      )}
     </div>
   );
 };
