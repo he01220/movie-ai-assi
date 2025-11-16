@@ -504,17 +504,22 @@ const MovieDetails = () => {
                 ))}
               </div>
               
-              {/* Watch Full Movie Button */}
-              <div className="w-full mb-4">
-                <Button 
-                  onClick={handleWatchFullMovie}
-                  className="w-full md:w-auto bg-red-600 hover:bg-red-700 text-white py-6 text-lg font-semibold"
-                  size="lg"
-                >
-                  <Play className="w-6 h-6 mr-2" />
-                  Смотреть фильм
-                </Button>
+              {/* Watch Full Movie Button - Fixed position at bottom of viewport */}
+              <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent z-50 p-4">
+                <div className="container mx-auto">
+                  <Button 
+                    onClick={handleWatchFullMovie}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white py-6 text-lg font-bold shadow-lg transform transition-all duration-300 hover:scale-105"
+                    size="lg"
+                  >
+                    <Play className="w-6 h-6 mr-2" fill="currentColor" />
+                    Смотреть фильм
+                  </Button>
+                </div>
               </div>
+              
+              {/* Spacer to prevent content from being hidden behind fixed button */}
+              <div className="h-24"></div>
               
               <div className="flex flex-wrap gap-2">
                 {user && (

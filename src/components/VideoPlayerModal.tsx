@@ -61,22 +61,24 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                   loading="eager"
                 />
               </div>
-              {/* Watch Full Movie button - only shown when video is playing */}
-              <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center space-y-4 z-50 px-4">
-                <Button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSearchInBrowser(false);
-                  }}
-                  variant="default"
-                  size="lg"
-                  className="bg-red-600 hover:bg-red-700 text-white py-4 px-8 flex items-center text-lg font-semibold 
-                  shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300
-                  animate-pulse hover:animate-none opacity-90 hover:opacity-100 w-full max-w-md"
-                >
-                  <Film className="w-5 h-5 mr-2" />
-                  Watch Full Movie
-                </Button>
+              {/* Watch Full Movie button - centered at the bottom */}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent z-50 p-4">
+                <div className="flex justify-center">
+                  <Button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSearchInBrowser(false);
+                    }}
+                    variant="default"
+                    size="lg"
+                    className="bg-red-600 hover:bg-red-700 text-white py-4 px-8 flex items-center text-lg font-bold 
+                    shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300
+                    animate-pulse hover:animate-none w-full max-w-md"
+                  >
+                    <Film className="w-5 h-5 mr-2" />
+                    Смотреть фильм полностью
+                  </Button>
+                </div>
               </div>
             </div>
           ) : (
