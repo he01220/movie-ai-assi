@@ -511,6 +511,20 @@ const MovieDetails = () => {
                 {movie.runtime && <span>• {movie.runtime} min</span>}
               </div>
               
+              {/* Watch Full Movie Button - Large and prominent */}
+              <div className="w-full mb-6">
+                <Button 
+                  onClick={handleWatchFullMovie}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white py-4 px-8 text-lg font-bold
+                  shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-300
+                  flex items-center justify-center gap-2"
+                  size="lg"
+                >
+                  <Film className="w-5 h-5" />
+                  Смотреть фильм полностью
+                </Button>
+              </div>
+              
               <div className="flex flex-wrap gap-2 mb-4">
                 {movie.genres?.map((genre) => (
                   <Badge key={genre.id} variant="secondary">
