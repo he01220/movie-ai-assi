@@ -267,6 +267,21 @@ const MovieDetails = () => {
     }
   };
 
+  const handleWatchFullMovie = () => {
+    try {
+      logExternalSearch(movie?.title || '');
+      const searchQuery = `${movie?.title} full movie`;
+      window.open(`https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      console.error('Error searching for full movie:', error);
+      toast({
+        title: "Error",
+        description: "Failed to search for full movie",
+        variant: "destructive",
+      });
+    }
+  };
+
 
   if (loading) {
     return (
@@ -464,27 +479,21 @@ const MovieDetails = () => {
             Back
           </Button>
           
-          <div className="flex items-end gap-6">
-            <img
-              src={movie.poster_path 
-                ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-                : '/placeholder.svg'
-              }
-              alt={movie.title}
-              className="w-32 md:w-48 rounded-lg shadow-xl"
-            />
-            
-            <div className="flex-1 text-white">
-              <h1 className="text-3xl md:text-5xl font-bold mb-2">{movie.title}</h1>
-              <div className="flex items-center gap-4 mb-4">
-                {movie.vote_average !== undefined && movie.vote_average !== null && (
-                  <div className="flex items-center gap-1">
-                    <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                    <span>{movie.vote_average.toFixed(1)}</span>
-                  </div>
-                )}
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="w-full md:w-1/3 lg:w-1/4">
+              <img
+                src={movie.poster_path 
+                  ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+                  : '/placeholder.svg'
+                }
+                alt={movie.title}
+                className="w-full h-auto rounded-lg shadow-lg"
+              />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 text-muted-foreground mb-4">
                 <span>{new Date(movie.release_date).getFullYear()}</span>
-                {movie.runtime && <span>{movie.runtime} min</span>}
+                {movie.runtime && <span>• {movie.runtime} min</span>}
               </div>
               
               <div className="flex flex-wrap gap-2 mb-4">
@@ -493,6 +502,18 @@ const MovieDetails = () => {
                     {genre.name}
                   </Badge>
                 ))}
+              </div>
+              
+              {/* Watch Full Movie Button */}
+              <div className="w-full mb-4">
+                <Button 
+                  onClick={handleWatchFullMovie}
+                  className="w-full md:w-auto bg-red-600 hover:bg-red-700 text-white py-6 text-lg font-semibold"
+                  size="lg"
+                >
+                  <Play className="w-6 h-6 mr-2" />
+                  Смотреть фильм
+                </Button>
               </div>
               
               <div className="flex flex-wrap gap-2">
