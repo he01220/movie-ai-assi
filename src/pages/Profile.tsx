@@ -72,22 +72,73 @@ const Profile = () => {
 
   // Fetch user profile with error handling and retry logic
   const fetchProfile = useCallback(async () => {
+    console.log('fetchProfile called');
     if (!user) {
+      console.log('No user, setting profile to null');
       setProfile(null);
       setLoading(false);
       return;
     }
 
     const loadProfile = async (attempt = 1) => {
+      console.log(`Loading profile (attempt ${attempt})`);
       setLoading(true);
       try {
-        const { data, error } = await supabase
+        console.log('Fetching profile from Supabase...');
+        const { data, error, status } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', user.id)
           .single<DatabaseProfile>();
 
-        if (error) throw error;
+        console.log('Supabase response:', { data, error, status });
+
+        if (error) {
+          console.error('Supabase error:', error);
+          throw error;
+        }
+        
+        if (!data) {
+          console.log('No profile data found, creating default profile');
+          // Create a new profile if it doesn't exist
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert([
+              {
+                id: user.id,
+                username: user.email?.split('@')[0] || `user_${Math.random().toString(36).substr(2, 9)}`,
+                full_name: user.email || 'User',
+                language: 'ru-RU',
+                preferred_language: 'ru-RU'
+              }
+            ])
+            .select()
+            .single();
+
+          if (createError) throw createError;
+          
+          if (newProfile) {
+            const profileData: UserProfile = {
+              id: newProfile.id,
+              username: newProfile.username || user.email?.split('@')[0] || 'user',
+              full_name: (newProfile as any).full_name || user.email || 'User',
+              display_name: (newProfile as any).display_name || (newProfile as any).full_name || user.email?.split('@')[0] || 'User',
+              avatar_url: (newProfile as any).avatar_url || null,
+              bio: (newProfile as any).bio || null,
+              created_at: newProfile.created_at || new Date().toISOString(),
+              updated_at: newProfile.updated_at || new Date().toISOString(),
+              language: newProfile.language || 'ru-RU',
+              preferred_language: newProfile.preferred_language || 'ru-RU'
+            };
+            
+            console.log('Created new profile:', profileData);
+            setProfile(profileData);
+            setEditDisplayName(profileData.full_name || '');
+            setEditUsername(profileData.username || '');
+            setEditBio(profileData.bio || '');
+            return;
+          }
+        }
         
         // Transform the data to match UserProfile interface
         const profileData: UserProfile = {
@@ -103,6 +154,7 @@ const Profile = () => {
           preferred_language: data.preferred_language || 'ru-RU'
         };
         
+        console.log('Profile loaded successfully:', profileData);
         setProfile(profileData);
         setEditDisplayName(profileData.full_name || '');
         setEditUsername(profileData.username || '');
@@ -112,12 +164,12 @@ const Profile = () => {
         console.error('Profile load error (attempt', attempt, '):', error);
         
         if (attempt < 3) {
-          // Retry after a delay
+          console.log(`Retrying in ${attempt} second(s)...`);
           await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
           return loadProfile(attempt + 1);
         }
         
-        // If we've tried 3 times and still failing, show error but don't block UI
+        console.error('All attempts failed, showing error to user');
         toast({
           title: 'Ошибка загрузки профиля',
           description: 'Не удалось загрузить данные профиля. Пожалуйста, обновите страницу.',
@@ -137,8 +189,10 @@ const Profile = () => {
           language: 'ru-RU',
           preferred_language: 'ru-RU'
         };
+        console.log('Using default profile:', defaultProfile);
         setProfile(defaultProfile);
       } finally {
+        console.log('Profile loading completed');
         setLoading(false);
       }
     };
