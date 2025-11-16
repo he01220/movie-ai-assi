@@ -50,7 +50,8 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
             </div>
           ) : videoKey ? (
             <div className="absolute inset-0 flex flex-col">
-              <div className="flex-1">
+              {/* Video container with reduced height to make space for the button */}
+              <div className="flex-1 relative" style={{ height: 'calc(100% - 80px)' }}>
                 <iframe
                   key={videoKey}
                   src={`https://www.youtube.com/embed/${videoKey}?autoplay=1&mute=0`}
@@ -61,25 +62,23 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                   loading="eager"
                 />
               </div>
-              {/* Watch Full Movie button - absolutely positioned at bottom */}
-              <div className="absolute bottom-0 left-0 right-0 z-[9999] p-4">
-                <div className="max-w-2xl mx-auto relative">
-                  <div className="absolute bottom-full left-0 right-0 h-16 bg-gradient-to-t from-black/90 to-transparent"></div>
-                  <Button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSearchInBrowser(false);
-                    }}
-                    variant="default"
-                    size="lg"
-                    className="w-full bg-red-600 hover:bg-red-700 text-white py-4 px-8 text-lg font-bold 
-                    shadow-2xl hover:shadow-red-500/30 transform hover:scale-[1.02] transition-all duration-300
-                    flex items-center justify-center gap-2 rounded-full border-2 border-white/20 relative z-10"
-                  >
-                    <Film className="w-5 h-5" />
-                    Смотреть фильм полностью
-                  </Button>
-                </div>
+              
+              {/* Watch Full Movie button - fixed at the bottom of the video area */}
+              <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black/90 via-black/70 to-transparent flex items-end justify-center pb-2 z-50">
+                <Button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSearchInBrowser(false);
+                  }}
+                  variant="default"
+                  size="lg"
+                  className="bg-red-600 hover:bg-red-700 text-white py-3 px-8 text-lg font-bold 
+                  shadow-2xl hover:shadow-red-500/30 transform hover:scale-[1.02] transition-all duration-300
+                  flex items-center justify-center gap-2 rounded-full border-2 border-white/20 w-[90%] max-w-md mx-auto"
+                >
+                  <Film className="w-5 h-5" />
+                  Смотреть фильм полностью
+                </Button>
               </div>
             </div>
           ) : (
