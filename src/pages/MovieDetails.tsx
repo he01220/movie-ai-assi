@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Heart, Plus, Share, Star, X, Play } from 'lucide-react';
+import { ArrowLeft, Heart, Plus, Share, Star, X, Play, Film } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -328,11 +328,26 @@ const MovieDetails = () => {
         </DialogContent>
       </Dialog>
       <div className="container mx-auto px-4 py-8">
-        <div className="flex items-center gap-4 mb-6">
-          <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-2xl font-bold">{movie.title}</h1>
+        <Button variant="outline" size="icon" onClick={() => navigate(-1)} className="mb-6">
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        
+        <div className="mb-6">
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">{movie.title}</h1>
+          
+          {/* Watch Full Movie Button - Large and prominent */}
+          <div className="w-full max-w-2xl">
+            <Button 
+              onClick={handleWatchFullMovie}
+              className="w-full bg-red-600 hover:bg-red-700 text-white py-4 px-8 text-lg font-bold
+              shadow-lg hover:shadow-xl transform hover:scale-[1.02] transition-all duration-300
+              flex items-center justify-center gap-2"
+              size="lg"
+            >
+              <Film className="w-5 h-5" />
+              Смотреть фильм полностью
+            </Button>
+          </div>
         </div>
         
         {/* Trailer Section */}
