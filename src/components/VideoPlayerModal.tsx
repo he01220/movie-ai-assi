@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Button } from "@/components/ui/button";
-import { Globe, Play, X, Film } from "lucide-react";
+import { Globe, Play, X, Film, Search } from "lucide-react";
 import { logExternalSearch } from "@/utils/history";
 import { useEffect, useState } from "react";
 
@@ -71,6 +71,16 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                 >
                   <Film className="w-4 h-4" />
                   <span className="font-medium">Watch Full Movie</span>
+                </button>
+                
+                {/* Search in Browser Button */}
+                <button
+                  onClick={() => handleSearchInBrowser(true)}
+                  className="absolute bottom-6 left-6 bg-gray-800/80 hover:bg-gray-700/90 text-white py-2 px-4 rounded-md flex items-center gap-2 z-10 transition-all duration-200 hover:scale-105 shadow-lg backdrop-blur-sm"
+                  title="Search in Browser"
+                >
+                  <Search className="w-4 h-4" />
+                  <span className="font-medium">Search in Browser</span>
                 </button>
               </div>
             </div>
