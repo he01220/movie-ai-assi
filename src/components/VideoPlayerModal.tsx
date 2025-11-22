@@ -63,23 +63,15 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
                 />
                 
                 {/* Test element - positioned absolutely over the video */}
-                <div style={{
-                  position: 'fixed',
-                  bottom: '50px',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  backgroundColor: 'red',
-                  color: 'white',
-                  padding: '20px 40px',
-                  borderRadius: '10px',
-                  zIndex: 9999,
-                  fontSize: '24px',
-                  fontWeight: 'bold',
-                  border: '3px solid white',
-                  boxShadow: '0 0 20px rgba(255,255,255,0.8)'
-                }}>
-                  CAN YOU SEE THIS TEXT?
-                </div>
+                {/* Watch Full Movie Button */}
+                <button
+                  onClick={() => window.open(`https://www.themoviedb.org/movie/${videoKey}`, '_blank')}
+                  className="absolute bottom-6 right-6 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md flex items-center gap-2 z-10 transition-all duration-200 hover:scale-105 shadow-lg"
+                  title="Watch Full Movie"
+                >
+                  <Film className="w-4 h-4" />
+                  <span className="font-medium">Watch Full Movie</span>
+                </button>
               </div>
             </div>
           ) : (
