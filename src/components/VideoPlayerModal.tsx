@@ -28,23 +28,6 @@ const VideoPlayerModal = ({ isOpen, onClose, movieTitle, videoKey, isLoading = f
     window.open(`https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`, '_blank');
   };
 
-  if (typeof window !== 'undefined') {
-    const testElement = document.createElement('div');
-    testElement.style.position = 'fixed';
-    testElement.style.top = '20px';
-    testElement.style.left = '50%';
-    testElement.style.transform = 'translateX(-50%)';
-    testElement.style.backgroundColor = 'red';
-    testElement.style.color = 'white';
-    testElement.style.padding = '20px';
-    testElement.style.zIndex = '99999';
-    testElement.style.fontSize = '24px';
-    testElement.style.border = '3px solid white';
-    testElement.style.boxShadow = '0 0 20px rgba(255,255,255,0.8)';
-    testElement.textContent = 'ROOT LEVEL TEST ELEMENT';
-    document.body.appendChild(testElement);
-  }
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-4xl w-full p-0 bg-transparent border-0 overflow-visible">
